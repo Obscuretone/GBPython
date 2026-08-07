@@ -1,0 +1,18 @@
+# Build artifacts (regenerate with `make`)
+gbpython.gb
+gbpython.map
+gbpython.noi
+gbpython.ihx
+gbpython.sym
+*.o
+*.lst
+*.asm
+*.adb
+*.rel
+*.lk
+*.sav
+
+# Python
+__pycache__/
+*.pyc
+*.ihx
