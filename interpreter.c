@@ -1449,14 +1449,13 @@ static long eval_method(ASTNode* n) {
     uint8_t kt2, vt2;
     long kv2, vv2;
 
+    uint8_t btype, bbank;
     argv[0] = evaluate(n->left); /* self */
-    arg_type[0] = TYPE_OBJ;
-    arg_bank[0] = 2;
+    btype = last_eval_type;
+    bbank = last_eval_str_bank;
+    arg_type[0] = btype;
+    arg_bank[0] = bbank;
     if (exec_signal == SIG_ERROR) return 0;
-    if (last_eval_type != TYPE_OBJ) {
-        raise_error("TypeError: method");
-        return 0;
-    }
     while (a && argc < 4) {
         argv[argc] = evaluate(a->left);
         arg_type[argc] = last_eval_type;
@@ -1465,6 +1464,19 @@ static long eval_method(ASTNode* n) {
         a = a->right;
     }
     if (exec_signal == SIG_ERROR) return 0;
+    if (btype != TYPE_OBJ) {
+        /* built-in value methods: 'x'.upper(), d.get(k), ... The name
+           lives in the bank-1 AST, unreadable from banked builtins;
+           stage it in WRAM. */
+        long r2;
+        strcpy(sbuf_r, n->identifier);
+        if (call_value_method(argv[0], btype, bbank, argv + 1, arg_type + 1,
+                              arg_bank + 1, argc - 1, &r2)) {
+            return r2;
+        }
+        raise_error_name("AttributeError", n->identifier);
+        return 0;
+    }
     /* entry 0 is the hidden class link (TYPE_NONE key) */
     dict_entry((int)argv[0], 0, &kt2, &kv2, &vt2, &vv2);
     if (kt2 != TYPE_NONE) {

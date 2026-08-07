@@ -240,6 +240,34 @@ CASES: list[tuple[str, str, list[str]]] = [
     ("math helpers", "gcd(48,18);floor(2.7);ceil(2.3)", ["> 6", "> 2", "> 3"]),
     ("import random", "import random\nseed(7)\nr = randint(1,6)\n1 <= r <= 6", ["> True"]),
     ("ModuleNotFound", "import nosuch", ["ModuleNotFound: nosu"]),
+    # global keyword
+    ("global write", "cnt=0\ndef bump():\n    global cnt\n    cnt=cnt+1\nbump();bump()\ncnt", ["> 2"]),
+    ("global create", "def mkg():\n    global gnew\n    gnew=99\nmkg()\ngnew", ["> 99"]),
+    ("local stays local", "dd=1\ndef dloc():\n    dd=5\ndloc()\ndd", ["> 1"]),
+    # inheritance
+    ("inheritance", "class Anim:\n    def legs(s):\n        return 4\n    def kind(s):\n        return 'anim'\nclass Cat(Anim):\n    def kind(s):\n        return 'cat'\nc=Cat()\nc.legs();c.kind()", ["> 4", "> 'cat'"]),
+    ("inherit unknown base", "class Z(nope2):\n    pass", ["NameError: nope2"]),
+    # try / except / raise
+    ("catch ZeroDivision", "try:\n    x = 1/0\nexcept ZeroDivisionError:\n    print('caught')", ["caught"]),
+    ("catch then continue", "try:\n    zz\nexcept NameError:\n    print('nope')\nprint('after')", ["nope", "after"]),
+    ("wrong filter propagates", "try:\n    zz\nexcept ValueError:\n    print(1)", ["NameError: zz"]),
+    ("bare except", "try:\n    [1][5]\nexcept:\n    print('bare')", ["bare"]),
+    ("multiple excepts", "try:\n    int('x')\nexcept ValueError:\n    print('v')\nexcept TypeError:\n    print('t')", ["v"]),
+    ("raise with message", "raise ValueError('bad')", ["ValueError: bad"]),
+    ("raise bare", "raise RuntimeError", ["RuntimeError"]),
+    ("try in function", "def safe():\n    try:\n        return 1/0\n    except ZeroDivisionError:\n        return -1\nsafe()", ["> -1"]),
+    # methods on built-in types
+    ("str upper lower", "'gb py'.upper();'AbC'.lower()", ["> 'GB PY'", "> 'abc'"]),
+    ("str strip", "'  hi  '.strip()", ["> 'hi'"]),
+    ("str find", "'hello'.find('llo');'hi'.find('z')", ["> 2", "> -1"]),
+    ("str split", "'a,b,c'.split(',');'one two'.split()", ["> ['a', 'b', 'c']", "> ['one', 'two']"]),
+    ("str replace", "'aXbXc'.replace('X','-')", ["> 'a-b-c'"]),
+    ("dict get", "dg={'a':1}\ndg.get('a');dg.get('z',9)", ["> 1", "> 9"]),
+    ("dict keys values", "{'x':1,'y':2}.keys();{'x':1,'y':2}.values()", ["> ['x', 'y']", "> [1, 2]"]),
+    ("list index count", "[5,6,7].index(6);[1,2,2,3].count(2)", ["> 1", "> 2"]),
+    ("index ValueError", "[1].index(9)", ["ValueError: index"]),
+    ("method AttributeError", "'abc'.nope()", ["AttributeError: nope"]),
+    ("chained methods", "sw='a b c'\nww=sw.split()\nlen(ww);ww[2].upper()", ["> 3", "> 'C'"]),
     # comments
     ("comment line", "# nothing\n5 # five", ["> 5"]),
     # output window scrolls, keeps last 5

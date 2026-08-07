@@ -30,6 +30,12 @@ void ui_input_line(char* dst, uint8_t maxlen) BANKED;
 uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
                      uint8_t* arg_bank, uint8_t argc, long* result) BANKED;
 
+/* Methods on non-object values: 'x'.upper(), d.get(k), l.index(v)...
+   name arrives via WRAM (sbuf_r); returns 1 if handled. */
+uint8_t call_value_method(long base, uint8_t btype, uint8_t bbank,
+                          long* argv, uint8_t* arg_type, uint8_t* arg_bank,
+                          uint8_t argc, long* result) BANKED;
+
 /* Interpreter entry point (interpreter.c, ROM bank 1) */
 void run_interpreter(void) BANKED;
 
