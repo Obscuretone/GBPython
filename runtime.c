@@ -342,6 +342,8 @@ uint8_t truthy(long val, uint8_t vtype, uint8_t str_bank) {
             return dict_len((int)val) > 0;
         case TYPE_FLOAT:
             return !f32_is_zero(val);
+        case TYPE_OBJ:
+            return 1;
         case TYPE_NONE:
             return 0;
         default:

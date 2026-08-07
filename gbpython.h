@@ -74,6 +74,8 @@ typedef enum {
     TOK_BREAK,
     TOK_CONTINUE,
     TOK_PASS,
+    TOK_CLASS,
+    TOK_IMPORT,
     TOK_LBRACKET,
     TOK_RBRACKET,
     TOK_LBRACE,
@@ -149,6 +151,11 @@ typedef enum {
     AST_CHAIN,  /* left = first operand; right = ARG links (number = op*2+negate) */
     AST_TUPLE,  /* left = AST_ARG element chain */
     AST_SET,    /* left = AST_ARG element chain */
+    AST_CLASS,  /* identifier = name, right = body of defs */
+    AST_ATTR,   /* left = base expr, identifier = attribute name */
+    AST_SETATTR,/* left = AST_ATTR target, right = value */
+    AST_METHOD, /* left = base expr, identifier = method, right = arg chain */
+    AST_IMPORT, /* identifier = module name */
     AST_SEQ
 } ASTNodeType;
 
@@ -162,6 +169,10 @@ typedef struct ASTNode {
 
 ASTNode* make_node(ASTNodeType type);
 ASTNode* parse_program(void) BANKED;
+/* Parse source text (module import); does its own lexer_reset */
+ASTNode* parse_module(const char* src) BANKED;
+/* Find + parse a ROM-baked module; NULL if unknown */
+ASTNode* import_module(const char* name) BANKED;
 
 /* Runtime (runtime.c, ROM bank 0): arenas, values, output, errors */
 
@@ -174,6 +185,7 @@ ASTNode* parse_program(void) BANKED;
 #define TYPE_DICT 5
 #define TYPE_FLOAT 6
 #define TYPE_TUPLE 7  /* list storage, immutable */
+#define TYPE_OBJ 8    /* dict storage + hidden class link */
 #define TYPE_SET 9    /* dict storage, values are None */
 
 /* Control-flow signals */

@@ -269,6 +269,27 @@ void render_val(uint8_t t, long v, char* buf, uint8_t* pos) {
         }
         return;
     }
+    if (t == TYPE_OBJ) {
+        uint8_t kt2, vt2;
+        long kv2, vv2;
+        uint8_t i = 0;
+        char* cname;
+        dict_entry((int)v, 0, &kt2, &kv2, &vt2, &vv2);
+        cname = (char*)(uint16_t)vv2; /* ClassReg starts with its name */
+        tmp[i++] = '<';
+        while (*cname && i < 17) tmp[i++] = *cname++;
+        tmp[i++] = '>';
+        tmp[i] = '\0';
+        nl = i;
+        if (*pos + nl > 17) {
+            buf[(*pos)++] = '.';
+            buf[(*pos)++] = '.';
+            return;
+        }
+        strcpy(buf + *pos, tmp);
+        *pos += nl;
+        return;
+    }
     if (t == TYPE_STR) {
         uint8_t i = 0;
         char* s = (char*)(uint16_t)v;
@@ -337,9 +358,11 @@ void emit_value(long val, uint8_t vtype, uint8_t str_bank, uint8_t echo) BANKED 
         sprintf(line_buf, echo ? "> %s" : "%s", val ? "True" : "False");
     } else if (vtype == TYPE_NONE) {
         sprintf(line_buf, echo ? "> %s" : "%s", "None");
-    } else if (vtype == TYPE_FLOAT) {
+    } else if (vtype == TYPE_FLOAT || vtype == TYPE_OBJ) {
         char temp[24];
-        render_float(val, temp);
+        uint8_t pos = 0;
+        if (vtype == TYPE_FLOAT) render_float(val, temp);
+        else { render_val(TYPE_OBJ, val, temp, &pos); temp[pos] = '\0'; }
         sprintf(line_buf, echo ? "> %s" : "%s", temp);
     } else {
         if (echo) {

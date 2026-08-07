@@ -207,10 +207,59 @@ ASTNode* parse_primary(void) {
     return NULL;
 }
 
-/* Postfix subscripts: base[index] and slices base[a:b] */
+/* Postfix subscripts base[i], slices base[a:b], attributes base.attr,
+   and method calls base.m(args) */
 ASTNode* parse_postfix(void) {
     ASTNode* base = parse_primary();
-    while (curr_tok.type == TOK_LBRACKET) {
+    while (curr_tok.type == TOK_LBRACKET || curr_tok.type == TOK_DOT) {
+        if (curr_tok.type == TOK_DOT) {
+            ASTNode* n;
+            char attr[16];
+            next_token();
+            if (curr_tok.type != TOK_IDENTIFIER) return base;
+            strcpy(attr, curr_tok.text);
+            next_token();
+            if (curr_tok.type == TOK_LPAREN) {
+                ASTNode* tail = NULL;
+                n = make_node(AST_METHOD);
+                if (n != NULL) {
+                    strcpy(n->identifier, attr);
+                    n->left = base;
+                }
+                next_token();
+                while (curr_tok.type != TOK_RPAREN &&
+                       curr_tok.type != TOK_EOF &&
+                       curr_tok.type != TOK_NEWLINE) {
+                    ASTNode* a = make_node(AST_ARG);
+                    if (a != NULL) {
+                        a->left = parse_expression();
+                    }
+                    if (tail == NULL) {
+                        if (n != NULL) n->right = a;
+                    } else {
+                        tail->right = a;
+                    }
+                    tail = a;
+                    if (curr_tok.type == TOK_COMMA) {
+                        next_token();
+                    } else {
+                        break;
+                    }
+                }
+                if (curr_tok.type == TOK_RPAREN) {
+                    next_token();
+                }
+            } else {
+                n = make_node(AST_ATTR);
+                if (n != NULL) {
+                    strcpy(n->identifier, attr);
+                    n->left = base;
+                }
+            }
+            base = n;
+            continue;
+        }
+        {
         ASTNode* n;
         ASTNode* start = NULL;
         next_token();
@@ -243,6 +292,7 @@ ASTNode* parse_postfix(void) {
             next_token();
         }
         base = n;
+        }
     }
     return base;
 }
@@ -595,6 +645,17 @@ ASTNode* parse_simple(void) {
             }
             return n;
         }
+        if (expr != NULL && expr->type == AST_ATTR &&
+            curr_tok.type == TOK_EQUAL) {
+            ASTNode* n;
+            next_token();
+            n = make_node(AST_SETATTR);
+            if (n != NULL) {
+                n->left = expr;
+                n->right = parse_expression();
+            }
+            return n;
+        }
         return expr;
     }
 }
@@ -694,6 +755,35 @@ ASTNode* parse_if(void) {
 }
 
 ASTNode* parse_statement(void) {
+    if (curr_tok.type == TOK_CLASS) {
+        ASTNode* n;
+        def_mode++; /* whole class body persists like defs */
+        n = make_node(AST_CLASS);
+        next_token();
+        if (n != NULL && curr_tok.type == TOK_IDENTIFIER) {
+            strcpy(n->identifier, curr_tok.text);
+            next_token();
+        }
+        if (curr_tok.type == TOK_COLON) {
+            next_token();
+        }
+        if (n != NULL) {
+            n->right = parse_suite();
+        }
+        def_mode--;
+        return n;
+    }
+
+    if (curr_tok.type == TOK_IMPORT) {
+        ASTNode* n = make_node(AST_IMPORT);
+        next_token();
+        if (n != NULL && curr_tok.type == TOK_IDENTIFIER) {
+            strcpy(n->identifier, curr_tok.text);
+            next_token();
+        }
+        return n;
+    }
+
     if (curr_tok.type == TOK_DEF) {
         ASTNode* n;
         ASTNode* param_tail = NULL;
@@ -809,7 +899,56 @@ ASTNode* parse_statement(void) {
     return parse_stmt_list();
 }
 
+static ASTNode* parse_program_body(void);
+
 ASTNode* parse_program(void) BANKED {
+    return parse_program_body();
+}
+
+ASTNode* parse_module(const char* src) BANKED {
+    lexer_reset(src);
+    next_token();
+    return parse_program_body();
+}
+
+/* ROM-baked standard library: modules are gbpython source compiled at
+   import time. Module-level mutable state uses the one-element-list
+   trick since there is no 'global' keyword. */
+static const char module_math[] =
+    "pi=3.14159\n"
+    "e=2.71828\n"
+    "def sqrt(x):\n"
+    "    g=float(x)\n"
+    "    if g==0.0: return 0.0\n"
+    "    for i in range(14): g=(g+x/g)/2\n"
+    "    return g\n"
+    "def floor(x): return int(x//1)\n"
+    "def ceil(x): return 0-int((0-x)//1)\n"
+    "def gcd(a,b):\n"
+    "    while b: a,b=b,a%b\n"
+    "    return a\n";
+
+static const char module_random[] =
+    "_rs=[12345]\n"
+    "def seed(n):\n"
+    "    _rs[0]=n\n"
+    "def randint(a,b):\n"
+    "    _rs[0]=(_rs[0]*75+74)%65537\n"
+    "    return a+_rs[0]%(b-a+1)\n";
+
+ASTNode* import_module(const char* name) BANKED {
+    char local[16];
+    uint8_t i;
+    /* the name lives in banked SRAM; copy it out before comparing */
+    SWITCH_RAM(1);
+    for (i = 0; i < 15 && name[i]; i++) local[i] = name[i];
+    local[i] = '\0';
+    if (strcmp(local, "math") == 0) return parse_module(module_math);
+    if (strcmp(local, "random") == 0) return parse_module(module_random);
+    return NULL;
+}
+
+static ASTNode* parse_program_body(void) {
     ASTNode* head = NULL;
     ASTNode* tail = NULL;
 

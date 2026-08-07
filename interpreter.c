@@ -113,6 +113,57 @@ void register_func(const char* name, ASTNode* def) {
     }
 }
 
+/* Class registry: name -> method list. Method defs live in the persistent
+   def arena, so classes survive across runs like functions do. An
+   instance is a dict whose first entry has a TYPE_NONE key (impossible
+   from user code) holding the ClassReg pointer. */
+typedef struct MethodReg {
+    char name[16];
+    ASTNode* def;
+    struct MethodReg* next;
+} MethodReg;
+
+typedef struct ClassReg {
+    char name[16];
+    MethodReg* methods;
+    struct ClassReg* next;
+} ClassReg;
+
+ClassReg* classes = NULL;
+ClassReg* current_class = NULL; /* set while evaluating a class body */
+
+void classes_clear(void) {
+    while (classes) {
+        ClassReg* c = classes;
+        MethodReg* m = c->methods;
+        while (m) {
+            MethodReg* t = m;
+            m = m->next;
+            free(t);
+        }
+        classes = c->next;
+        free(c);
+    }
+}
+
+ClassReg* find_class(const char* name) {
+    ClassReg* c = classes;
+    while (c) {
+        if (strcmp(c->name, name) == 0) return c;
+        c = c->next;
+    }
+    return NULL;
+}
+
+MethodReg* find_method(ClassReg* c, const char* name) {
+    MethodReg* m = c->methods;
+    while (m) {
+        if (strcmp(m->name, name) == 0) return m;
+        m = m->next;
+    }
+    return NULL;
+}
+
 long evaluate(ASTNode* n);
 
 /* Evaluate a condition expression down to a C boolean */
@@ -134,11 +185,14 @@ uint8_t binop_ltype, binop_rtype;
 #define BINOP_FLOAT (binop_ltype == TYPE_FLOAT || binop_rtype == TYPE_FLOAT)
 
 uint8_t eval_binop(ASTNode* n, long* lp, long* rp) {
-    uint8_t lbank;
+    uint8_t lbank, ltype;
     *lp = evaluate(n->left);
-    binop_ltype = last_eval_type;
+    /* capture locally: evaluating the right side may run nested binops
+       that clobber the globals */
+    ltype = last_eval_type;
     lbank = last_eval_str_bank;
     *rp = evaluate(n->right);
+    binop_ltype = ltype;
     binop_rtype = last_eval_type;
     if (binop_ltype == TYPE_STR && binop_rtype == TYPE_STR) {
         fetch_str(sbuf_r, *rp, last_eval_str_bank);
@@ -200,6 +254,12 @@ uint8_t compare_op(ASTNodeType op, uint8_t lt, long l, uint8_t lb,
 
 static long eval_list_like(ASTNode* n);
 static long eval_call(ASTNode* n);
+static long eval_attr(ASTNode* n);
+static long eval_setattr(ASTNode* n);
+static long eval_method(ASTNode* n);
+static long invoke_function(ASTNode* def, const char* name, long* argv,
+                            uint8_t* arg_type, uint8_t* arg_bank,
+                            uint8_t argc);
 static long eval_forin(ASTNode* n);
 static long eval_slice(ASTNode* n);
 static long eval_chain(ASTNode* n);
@@ -497,9 +557,57 @@ long evaluate(ASTNode* n) {
             return 0;
         }
         case AST_DEF:
-            register_func(n->identifier, n);
+            if (current_class != NULL) {
+                MethodReg* m = find_method(current_class, n->identifier);
+                if (m == NULL) {
+                    m = (MethodReg*)malloc(sizeof(MethodReg));
+                    if (m != NULL) {
+                        strcpy(m->name, n->identifier);
+                        m->next = current_class->methods;
+                        current_class->methods = m;
+                    }
+                }
+                if (m != NULL) m->def = n;
+            } else {
+                register_func(n->identifier, n);
+            }
             last_eval_type = TYPE_NONE;
             return 0;
+        case AST_CLASS: {
+            ClassReg* c = find_class(n->identifier);
+            if (c == NULL) {
+                c = (ClassReg*)malloc(sizeof(ClassReg));
+                if (c != NULL) {
+                    strcpy(c->name, n->identifier);
+                    c->methods = NULL;
+                    c->next = classes;
+                    classes = c;
+                }
+            }
+            if (c != NULL) {
+                current_class = c;
+                if (n->right) evaluate(n->right);
+                current_class = NULL;
+            }
+            last_eval_type = TYPE_NONE;
+            return 0;
+        }
+        case AST_IMPORT: {
+            ASTNode* mod = import_module(n->identifier);
+            if (mod == NULL) {
+                raise_error_name("ModuleNotFound", n->identifier);
+                return 0;
+            }
+            evaluate(mod);
+            last_eval_type = TYPE_NONE;
+            return 0;
+        }
+        case AST_ATTR:
+            return eval_attr(n);
+        case AST_SETATTR:
+            return eval_setattr(n);
+        case AST_METHOD:
+            return eval_method(n);
         case AST_CALL:
             return eval_call(n);
         
@@ -629,65 +737,43 @@ static long eval_call(ASTNode* n) {
             }
 
             f = find_func(n->identifier);
-            if (f == NULL) {
-                last_eval_type = TYPE_INT;
-                raise_error_name("NameError", n->identifier);
-                return 0;
+            if (f != NULL) {
+                return invoke_function(f->def, n->identifier,
+                                       argv, arg_type, arg_bank, argc);
             }
-            if (call_depth >= MAX_CALL_DEPTH) {
-                last_eval_type = TYPE_INT;
-                raise_error("RecursionError");
-                return 0;
-            }
-            call_depth++;
-            saved_head = env;
-            saved_frame = frame_base;
-            if (saved_frame == NULL) {
-                globals_head = saved_head; /* frozen while calls run */
-            }
-            frame_base = saved_head;
-            param = f->def->left;
-            i = 0;
-            while (param && i < argc) {
-                set_variable(param->identifier, argv[i], arg_type[i], arg_bank[i]);
-                param = param->right;
-                i++;
-            }
-            if (param != NULL || i < argc) {
-                /* arity mismatch: too few or too many arguments */
-                while (env != saved_head) {
-                    EnvNode* t = env;
-                    env = env->next;
-                    free(t);
+            {
+                /* class instantiation: Name(args) */
+                ClassReg* c = find_class(n->identifier);
+                if (c != NULL) {
+                    int inst = dict_new();
+                    MethodReg* init;
+                    if (!inst) return 0;
+                    /* hidden class link: TYPE_NONE key can't collide */
+                    dict_set(inst, TYPE_NONE, 0, TYPE_INT, (long)(uint16_t)c);
+                    init = find_method(c, "__init__");
+                    if (init != NULL) {
+                        long margv[4];
+                        uint8_t mat[4];
+                        uint8_t mab[4];
+                        margv[0] = inst;
+                        mat[0] = TYPE_OBJ;
+                        mab[0] = 2;
+                        for (i = 0; i < argc && i < 3; i++) {
+                            margv[i + 1] = argv[i];
+                            mat[i + 1] = arg_type[i];
+                            mab[i + 1] = arg_bank[i];
+                        }
+                        invoke_function(init->def, n->identifier,
+                                        margv, mat, mab, argc + 1);
+                        if (exec_signal == SIG_ERROR) return 0;
+                    }
+                    last_eval_type = TYPE_OBJ;
+                    return inst;
                 }
-                frame_base = saved_frame;
-                call_depth--;
-                raise_error_name("TypeError", n->identifier);
-                return 0;
             }
-            if (f->def->right) {
-                evaluate(f->def->right);
-            }
-            if (exec_signal == SIG_RETURN) {
-                exec_signal = SIG_NONE;
-                result = return_value;
-                last_eval_type = return_type;
-                last_eval_str_bank = return_str_bank;
-            } else if (exec_signal == SIG_ERROR) {
-                last_eval_type = TYPE_INT;
-            } else {
-                exec_signal = SIG_NONE;
-                last_eval_type = TYPE_NONE; /* no return: None */
-            }
-            /* pop this frame's locals */
-            while (env != saved_head) {
-                EnvNode* t = env;
-                env = env->next;
-                free(t);
-            }
-            frame_base = saved_frame;
-            call_depth--;
-            return result;
+            last_eval_type = TYPE_INT;
+            raise_error_name("NameError", n->identifier);
+            return 0;
         }
 
 static long eval_forin(ASTNode* n) {
@@ -1135,6 +1221,154 @@ static long eval_list_like(ASTNode* n) {
             return dst;
         }
 
+static long invoke_function(ASTNode* def, const char* name, long* argv,
+                            uint8_t* arg_type, uint8_t* arg_bank,
+                            uint8_t argc) {
+    ASTNode* param;
+    EnvNode* saved_head;
+    EnvNode* saved_frame;
+    long result = 0;
+    uint8_t i = 0;
+    if (call_depth >= MAX_CALL_DEPTH) {
+        last_eval_type = TYPE_INT;
+        raise_error("RecursionError");
+        return 0;
+    }
+    call_depth++;
+    saved_head = env;
+    saved_frame = frame_base;
+    if (saved_frame == NULL) {
+        globals_head = saved_head; /* frozen while calls run */
+    }
+    frame_base = saved_head;
+    param = def->left;
+    while (param && i < argc) {
+        set_variable(param->identifier, argv[i], arg_type[i], arg_bank[i]);
+        param = param->right;
+        i++;
+    }
+    if (param != NULL || i < argc) {
+        /* arity mismatch: too few or too many arguments */
+        while (env != saved_head) {
+            EnvNode* t = env;
+            env = env->next;
+            free(t);
+        }
+        frame_base = saved_frame;
+        call_depth--;
+        raise_error_name("TypeError", name);
+        return 0;
+    }
+    if (def->right) {
+        evaluate(def->right);
+    }
+    if (exec_signal == SIG_RETURN) {
+        exec_signal = SIG_NONE;
+        result = return_value;
+        last_eval_type = return_type;
+        last_eval_str_bank = return_str_bank;
+    } else if (exec_signal == SIG_ERROR) {
+        last_eval_type = TYPE_INT;
+    } else {
+        exec_signal = SIG_NONE;
+        last_eval_type = TYPE_NONE; /* no return: None */
+    }
+    while (env != saved_head) {
+        EnvNode* t = env;
+        env = env->next;
+        free(t);
+    }
+    frame_base = saved_frame;
+    call_depth--;
+    return result;
+}
+
+static long eval_attr(ASTNode* n) {
+    long base = evaluate(n->left);
+    int slot;
+    uint8_t kt2, vt2;
+    long kv2, vv2;
+    if (exec_signal == SIG_ERROR) return 0;
+    if (last_eval_type != TYPE_OBJ) {
+        raise_error("TypeError: attr");
+        return 0;
+    }
+    /* attribute name is in the bank-1 AST */
+    slot = dict_find((int)base, TYPE_STR, (long)(uint16_t)n->identifier, 1);
+    if (slot < 0) {
+        raise_error_name("AttributeError", n->identifier);
+        return 0;
+    }
+    dict_entry((int)base, slot, &kt2, &kv2, &vt2, &vv2);
+    last_eval_type = vt2;
+    last_eval_str_bank = 2;
+    return vv2;
+}
+
+static long eval_setattr(ASTNode* n) {
+    ASTNode* target = n->left; /* AST_ATTR */
+    long base = evaluate(target->left);
+    long key, val;
+    uint8_t vt;
+    if (last_eval_type != TYPE_OBJ) {
+        raise_error("TypeError: attr");
+        return 0;
+    }
+    val = evaluate(n->right);
+    vt = last_eval_type;
+    if (exec_signal == SIG_ERROR) return 0;
+    if (vt == TYPE_STR) {
+        val = store_str_value(val, last_eval_str_bank);
+    }
+    key = store_str_value((long)(uint16_t)target->identifier, 1);
+    dict_set((int)base, TYPE_STR, key, vt, val);
+    last_eval_type = TYPE_NONE;
+    return 0;
+}
+
+static long eval_method(ASTNode* n) {
+    long argv[4];
+    uint8_t arg_type[4];
+    uint8_t arg_bank[4];
+    uint8_t argc = 1;
+    ASTNode* a = n->right;
+    ClassReg* c;
+    MethodReg* m;
+    uint8_t kt2, vt2;
+    long kv2, vv2;
+
+    argv[0] = evaluate(n->left); /* self */
+    arg_type[0] = TYPE_OBJ;
+    arg_bank[0] = 2;
+    if (exec_signal == SIG_ERROR) return 0;
+    if (last_eval_type != TYPE_OBJ) {
+        raise_error("TypeError: method");
+        return 0;
+    }
+    while (a && argc < 4) {
+        argv[argc] = evaluate(a->left);
+        arg_type[argc] = last_eval_type;
+        arg_bank[argc] = last_eval_str_bank;
+        argc++;
+        a = a->right;
+    }
+    if (exec_signal == SIG_ERROR) return 0;
+    /* entry 0 is the hidden class link (TYPE_NONE key) */
+    dict_entry((int)argv[0], 0, &kt2, &kv2, &vt2, &vv2);
+    if (kt2 != TYPE_NONE) {
+        raise_error("TypeError: method");
+        return 0;
+    }
+    c = (ClassReg*)(uint16_t)vv2;
+    m = find_method(c, n->identifier);
+    if (m == NULL) {
+        raise_error_name("AttributeError", n->identifier);
+        return 0;
+    }
+    return invoke_function(m->def, n->identifier, argv, arg_type,
+                           arg_bank, argc);
+}
+
 /* Top-level execution: python REPL semantics. Expression statements echo
    their value; assignments, compound statements, and print() do not. */
 void exec_statement(ASTNode* n) {
@@ -1158,6 +1392,9 @@ void exec_statement(ASTNode* n) {
         case AST_RETURN:
         case AST_STORE:
         case AST_MULTI:
+        case AST_CLASS:
+        case AST_IMPORT:
+        case AST_SETATTR:
             evaluate(n);
             if (exec_signal != SIG_ERROR) {
                 exec_signal = SIG_NONE; /* stray signals stop at top level */
@@ -1184,6 +1421,8 @@ void full_reset(void) {
         free(t);
     }
     funcs_clear();
+    classes_clear();
+    current_class = NULL;
     frame_base = NULL;
     globals_head = NULL;
     sram_ast_reset();

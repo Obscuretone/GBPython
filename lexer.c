@@ -43,6 +43,8 @@ static TokenType keyword_type(const char* text) {
     if (strcmp(text, "break") == 0) return TOK_BREAK;
     if (strcmp(text, "continue") == 0) return TOK_CONTINUE;
     if (strcmp(text, "pass") == 0) return TOK_PASS;
+    if (strcmp(text, "class") == 0) return TOK_CLASS;
+    if (strcmp(text, "import") == 0) return TOK_IMPORT;
     return TOK_IDENTIFIER;
 }
 

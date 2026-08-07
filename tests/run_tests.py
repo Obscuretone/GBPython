@@ -226,6 +226,20 @@ CASES: list[tuple[str, str, list[str]]] = [
     ("set membership", "2 in {1,2};9 in {1,2}", ["> True", "> False"]),
     ("set len eq", "len({1,2,3});{1,2}=={1,2}", ["> 3", "> True"]),
     ("set iterate", "for x in {7}: print(x)", ["7"]),
+    # classes
+    ("class define+init", "class Dog:\n    def __init__(self, n):\n        self.name = n\n    def speak(self):\n        return self.name + '!'\nd = Dog('rex')\nd.name", ["> 'rex'"]),
+    ("method call", "d.speak()", ["> 'rex!'"]),
+    ("object repr", "d", ["> <Dog>"]),
+    ("attr assign", "d.age = 3\nd.age + 1", ["> 4"]),
+    ("AttributeError", "d.tail", ["AttributeError: tail"]),
+    ("method AttributeError", "d.wag()", ["AttributeError: wag"]),
+    ("class persists", "Dog('bo').speak()", ["> 'bo!'"]),
+    ("two instances", "class P:\n    def __init__(s, x):\n        s.x = x\np,q = P(1),P(2)\np.x + q.x", ["> 3"]),
+    # import (ROM-baked stdlib)
+    ("import math", "import math\nprint(pi)\nsqrt(16);sqrt(2.0)", ["3.1416", "> 4.0", "> 1.4142"]),
+    ("math helpers", "gcd(48,18);floor(2.7);ceil(2.3)", ["> 6", "> 2", "> 3"]),
+    ("import random", "import random\nseed(7)\nr = randint(1,6)\n1 <= r <= 6", ["> True"]),
+    ("ModuleNotFound", "import nosuch", ["ModuleNotFound: nosu"]),
     # comments
     ("comment line", "# nothing\n5 # five", ["> 5"]),
     # output window scrolls, keeps last 5
