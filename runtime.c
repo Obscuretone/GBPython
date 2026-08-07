@@ -191,8 +191,14 @@ long str_concat(void) {
 }
 
 /* --- Lists ---------------------------------------------------------------
-   Bank 3: [int16 len][type u8, value i16]*len. Elements carry their own
-   type: ints, bools, strings (bank-2 pointers), None, or nested lists. */
+   Bank 3, chained blocks so the head address never changes and lists can
+   grow in place (.append) without breaking aliasing — same trick as dicts.
+   Head/block: [count:i16 (head only)][next:i16][4 entries of
+   (type u8, value i32) = 5 bytes] = 24 bytes. */
+
+#define LIST_BLOCK_ENTRIES 4
+#define LIST_ENTRY_SIZE 5
+#define LIST_BLOCK_SIZE (4 + LIST_BLOCK_ENTRIES * LIST_ENTRY_SIZE)
 
 int list_len(int ptr) {
     int v;
@@ -203,33 +209,108 @@ int list_len(int ptr) {
     return v;
 }
 
+/* Address of entry i, walking the chain. Bank 3 must be active. */
+static int list_entry_addr(int l, int i) {
+    while (i >= LIST_BLOCK_ENTRIES) {
+        l = *(int*)(l + 2);
+        i -= LIST_BLOCK_ENTRIES;
+    }
+    return l + 4 + LIST_ENTRY_SIZE * i;
+}
+
 long list_get(int ptr, int i, uint8_t* t) {
     long v;
-    int addr = ptr + 2 + 5 * i;
+    int e;
     SWITCH_RAM(3);
-    *t = *(uint8_t*)addr;
-    v = *(long*)(addr + 1);
+    e = list_entry_addr(ptr, i);
+    *t = *(uint8_t*)e;
+    v = *(long*)(e + 1);
     SWITCH_RAM(1);
     return v;
 }
 
 void list_set(int ptr, int i, long v, uint8_t t) {
-    int addr = ptr + 2 + 5 * i;
+    int e;
     SWITCH_RAM(3);
-    *(uint8_t*)addr = t;
-    *(long*)(addr + 1) = v;
+    e = list_entry_addr(ptr, i);
+    *(uint8_t*)e = t;
+    *(long*)(e + 1) = v;
     SWITCH_RAM(1);
 }
 
+/* New list of the given length; blocks are pre-chained, entries unset */
 int list_new(int len) {
-    uint8_t* p;
+    uint8_t* head;
+    uint8_t* blk;
+    int need = len;
     SWITCH_RAM(3);
-    p = (uint8_t*)sram_list_alloc(2 + 5 * len);
-    if (p != NULL) {
-        *(int*)p = len;
+    head = (uint8_t*)sram_list_alloc(LIST_BLOCK_SIZE);
+    if (head == NULL) {
+        SWITCH_RAM(1);
+        return 0;
+    }
+    *(int*)head = len;
+    *(int*)(head + 2) = 0;
+    blk = head;
+    need -= LIST_BLOCK_ENTRIES;
+    while (need > 0) {
+        uint8_t* nb = (uint8_t*)sram_list_alloc(LIST_BLOCK_SIZE);
+        if (nb == NULL) {
+            SWITCH_RAM(1);
+            return 0;
+        }
+        *(int*)(nb + 2) = 0;
+        *(int*)(blk + 2) = (int)nb;
+        blk = nb;
+        need -= LIST_BLOCK_ENTRIES;
     }
     SWITCH_RAM(1);
-    return p != NULL ? (int)p : 0;
+    return (int)head;
+}
+
+/* Append in place; returns 0 on allocation failure (error raised) */
+uint8_t list_append(int ptr, long v, uint8_t t) {
+    int n, blk, i, e;
+    SWITCH_RAM(3);
+    n = *(int*)ptr;
+    blk = ptr;
+    i = n;
+    while (i >= LIST_BLOCK_ENTRIES && *(int*)(blk + 2)) {
+        blk = *(int*)(blk + 2);
+        i -= LIST_BLOCK_ENTRIES;
+    }
+    if (i >= LIST_BLOCK_ENTRIES) {
+        uint8_t* nb = (uint8_t*)sram_list_alloc(LIST_BLOCK_SIZE);
+        if (nb == NULL) {
+            SWITCH_RAM(1);
+            return 0;
+        }
+        *(int*)(nb + 2) = 0;
+        *(int*)(blk + 2) = (int)nb;
+        blk = (int)nb;
+        i -= LIST_BLOCK_ENTRIES;
+    }
+    e = blk + 4 + LIST_ENTRY_SIZE * i;
+    *(uint8_t*)e = t;
+    *(long*)(e + 1) = v;
+    *(int*)ptr = n + 1;
+    SWITCH_RAM(1);
+    return 1;
+}
+
+/* Remove entry idx (shifting the tail left); caller bounds-checks */
+void list_remove_at(int ptr, int idx) {
+    int n, j;
+    SWITCH_RAM(3);
+    n = *(int*)ptr;
+    for (j = idx; j < n - 1; j++) {
+        int src = list_entry_addr(ptr, j + 1);
+        int dst = list_entry_addr(ptr, j);
+        *(uint8_t*)dst = *(uint8_t*)src;
+        *(long*)(dst + 1) = *(long*)(src + 1);
+    }
+    *(int*)ptr = n - 1;
+    SWITCH_RAM(1);
 }
 
 /* --- Dicts ---------------------------------------------------------------

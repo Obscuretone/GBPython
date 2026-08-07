@@ -264,6 +264,8 @@ int list_len(int ptr);
 long list_get(int ptr, int i, uint8_t* t);
 void list_set(int ptr, int i, long v, uint8_t t);
 int list_new(int len);
+uint8_t list_append(int ptr, long v, uint8_t t);
+void list_remove_at(int ptr, int idx);
 uint8_t num_eq(uint8_t ta, long va, uint8_t tb, long vb) BANKED;
 uint8_t val_eq(uint8_t ta, long va, uint8_t tb, long vb) BANKED;
 uint8_t list_eq(int a, int b) BANKED;

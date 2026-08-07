@@ -188,6 +188,37 @@ uint8_t call_value_method(long base, uint8_t btype, uint8_t bbank,
         return 0;
     }
 
+    if (btype == TYPE_LIST) {
+        if (strcmp(name, "append") == 0) {
+            if (!argc) {
+                raise_error("TypeError: append");
+                return 1;
+            }
+            if (arg_type[0] == TYPE_STR) {
+                argv[0] = store_str_value(argv[0], arg_bank[0]);
+            }
+            list_append((int)base, argv[0], arg_type[0]);
+            last_eval_type = TYPE_NONE;
+            return 1;
+        }
+        if (strcmp(name, "pop") == 0) {
+            int n2 = list_len((int)base);
+            int idx = n2 - 1;
+            uint8_t et;
+            if (argc) idx = (int)argv[0];
+            if (idx < 0) idx += n2;
+            if (n2 == 0 || idx < 0 || idx >= n2) {
+                raise_error("IndexError: pop");
+                return 1;
+            }
+            *result = list_get((int)base, idx, &et);
+            list_remove_at((int)base, idx);
+            last_eval_type = et;
+            last_eval_str_bank = 2;
+            return 1;
+        }
+    }
+
     if (btype == TYPE_LIST || btype == TYPE_TUPLE) {
         if (strcmp(name, "index") == 0) {
             int n2 = list_len((int)base);
