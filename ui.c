@@ -32,7 +32,30 @@ void draw_input_buffer(void) BANKED {
         col++;
     }
     if (total_lines > 3) {
-        skip = total_lines - 3;
+        /* never open the window on a wrap fragment: advance to the next
+           display line that starts a real source line */
+        uint8_t disp = 0;
+        uint8_t logical = 1;
+        uint8_t found = 0;
+        uint8_t want = total_lines - 3;
+        col = 0;
+        for (i = 0; i < input_len; i++) {
+            if (input_buffer[i] == '\n' || col == 20) {
+                disp++;
+                col = 0;
+                logical = (input_buffer[i] == '\n');
+                if (logical) continue;
+            }
+            if (col == 0 && logical && disp >= want) {
+                skip = disp;
+                found = 1;
+                break;
+            }
+            col++;
+        }
+        if (!found) {
+            skip = want;
+        }
     }
 
     line = 0;

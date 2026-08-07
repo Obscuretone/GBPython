@@ -17,13 +17,19 @@ char osk_grid[OSK_ROWS][OSK_COLS] = {
 
 uint8_t cursor_row = 0;
 uint8_t cursor_col = 0;
-/* The ROM boots with fizzbuzz pre-typed: cursor onto the run key and go */
+/* The ROM boots with fizzbuzz pre-typed: cursor onto the run key and go.
+   Formatted so no line exceeds the 20-column screen. */
 char input_buffer[INPUT_MAX + 1] =
-    "for i in range(1,16):\n"
-    "    if i%15==0: print('fizzbuzz')\n"
-    "    elif i%3==0: print('fizz')\n"
-    "    elif i%5==0: print('buzz')\n"
-    "    else: print(i)";
+    "for i in range(15):\n"
+    " n=i+1\n"
+    " if n%15==0:\n"
+    "  print('fizzbuzz')\n"
+    " elif n%3==0:\n"
+    "  print('fizz')\n"
+    " elif n%5==0:\n"
+    "  print('buzz')\n"
+    " else:\n"
+    "  print(n)";
 uint8_t input_len = 0; /* set from the buffer at boot */
 uint8_t runs_done = 0;   /* increments when a run finishes (tests poll it) */
 uint8_t program_ran = 0; /* last RUN wasn't followed by an edit */
