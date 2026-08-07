@@ -112,6 +112,36 @@ uint8_t call_value_method(long base, uint8_t btype, uint8_t bbank,
             *result = lst;
             return 1;
         }
+        if (strcmp(name, "join") == 0) {
+            /* sep.join(list_of_strings); sep is in sbuf_l */
+            char out[STR_MAX + 1];
+            uint8_t w = 0;
+            int n2, i2;
+            uint8_t et;
+            long ev;
+            char piece[STR_MAX + 1];
+            if (!argc || (arg_type[0] != TYPE_LIST && arg_type[0] != TYPE_TUPLE)) {
+                raise_error("TypeError: join");
+                return 1;
+            }
+            n2 = list_len((int)argv[0]);
+            for (i2 = 0; i2 < n2; i2++) {
+                uint8_t k2;
+                ev = list_get((int)argv[0], i2, &et);
+                if (et != TYPE_STR) {
+                    raise_error("TypeError: join");
+                    return 1;
+                }
+                if (i2) {
+                    for (k2 = 0; sbuf_l[k2] && w < STR_MAX; k2++) out[w++] = sbuf_l[k2];
+                }
+                fetch_str(piece, ev, 2);
+                for (k2 = 0; piece[k2] && w < STR_MAX; k2++) out[w++] = piece[k2];
+            }
+            out[w] = '\0';
+            *result = new_str(out);
+            return 1;
+        }
         if (strcmp(name, "replace") == 0) {
             char from[STR_MAX + 1];
             char to[40];

@@ -12,6 +12,8 @@
 #include <string.h>
 #include "gbpython.h"
 
+#define IS_NUM_ORD(t) ((t) == TYPE_INT || (t) == TYPE_BOOL || (t) == TYPE_FLOAT)
+
 uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
                      uint8_t* arg_bank, uint8_t argc, long* result) BANKED {
     *result = 0;
@@ -282,6 +284,43 @@ uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
         }
         last_eval_type = (best_t == TYPE_FLOAT) ? TYPE_FLOAT : TYPE_INT;
         *result = (best_t == TYPE_BOOL) ? (best != 0) : best;
+        return 1;
+    }
+
+    if (strcmp(name, "sorted") == 0) {
+        int src, dst, n2, i2, j2;
+        uint8_t et, et2;
+        long ev, ev2;
+        if (!argc || (arg_type[0] != TYPE_LIST && arg_type[0] != TYPE_TUPLE)) {
+            raise_error("TypeError: sorted");
+            return 1;
+        }
+        src = (int)argv[0];
+        n2 = list_len(src);
+        dst = list_new(n2);
+        if (dst) {
+            for (i2 = 0; i2 < n2; i2++) {
+                ev = list_get(src, i2, &et);
+                /* insertion sort */
+                for (j2 = i2; j2 > 0; j2--) {
+                    ev2 = list_get(dst, j2 - 1, &et2);
+                    if (IS_NUM_ORD(et) && IS_NUM_ORD(et2)) {
+                        if (f32_cmp(num_to_f32(ev2, et2), num_to_f32(ev, et)) <= 0) break;
+                    } else if (et == TYPE_STR && et2 == TYPE_STR) {
+                        fetch_str(sbuf_l, ev2, 2);
+                        fetch_str(sbuf_r + 20, ev, 2); /* name is in sbuf_r[0..] */
+                        if (strcmp(sbuf_l, sbuf_r + 20) <= 0) break;
+                    } else {
+                        raise_error("TypeError: sorted");
+                        return 1;
+                    }
+                    list_set(dst, j2, ev2, et2);
+                }
+                list_set(dst, j2, ev, et);
+            }
+        }
+        last_eval_type = TYPE_LIST;
+        *result = dst;
         return 1;
     }
 
