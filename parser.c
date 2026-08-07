@@ -214,7 +214,7 @@ ASTNode* parse_postfix(void) {
     while (curr_tok.type == TOK_LBRACKET || curr_tok.type == TOK_DOT) {
         if (curr_tok.type == TOK_DOT) {
             ASTNode* n;
-            char attr[16];
+            char attr[NAME_MAX + 1];
             next_token();
             if (curr_tok.type != TOK_IDENTIFIER) return base;
             strcpy(attr, curr_tok.text);
@@ -511,6 +511,25 @@ ASTNode* parse_simple(void) {
         next_token();
         return make_node(AST_CONTINUE);
     }
+    if (curr_tok.type == TOK_RAISE) {
+        ASTNode* n;
+        next_token();
+        n = make_node(AST_RAISE);
+        if (n != NULL && curr_tok.type == TOK_IDENTIFIER) {
+            strcpy(n->identifier, curr_tok.text);
+            next_token();
+            if (curr_tok.type == TOK_LPAREN) {
+                next_token();
+                if (curr_tok.type != TOK_RPAREN) {
+                    n->left = parse_expression();
+                }
+                if (curr_tok.type == TOK_RPAREN) {
+                    next_token();
+                }
+            }
+        }
+        return n;
+    }
     if (curr_tok.type == TOK_RETURN) {
         ASTNode* n;
         next_token();
@@ -586,7 +605,7 @@ ASTNode* parse_simple(void) {
         }
         if (*p == '=' && p[1] != '=') {
             ASTNode* n;
-            char id[16];
+            char id[NAME_MAX + 1];
             strcpy(id, curr_tok.text);
             src_ptr = p + 1;
             next_token();
@@ -606,7 +625,7 @@ ASTNode* parse_simple(void) {
             ASTNode* self_ref;
             ASTNodeType op_type;
             uint8_t oplen = 2;
-            char id[16];
+            char id[NAME_MAX + 1];
             strcpy(id, curr_tok.text);
             if (*p == '+') op_type = AST_ADD;
             else if (*p == '-') op_type = AST_SUB;
@@ -763,6 +782,21 @@ ASTNode* parse_statement(void) {
             strcpy(n->identifier, curr_tok.text);
             next_token();
         }
+        if (curr_tok.type == TOK_LPAREN) {
+            /* single inheritance: class Sub(Base): */
+            next_token();
+            if (curr_tok.type == TOK_IDENTIFIER) {
+                ASTNode* base = make_node(AST_IDENTIFIER);
+                if (base != NULL) {
+                    strcpy(base->identifier, curr_tok.text);
+                }
+                if (n != NULL) n->left = base;
+                next_token();
+            }
+            if (curr_tok.type == TOK_RPAREN) {
+                next_token();
+            }
+        }
         if (curr_tok.type == TOK_COLON) {
             next_token();
         }
@@ -770,6 +804,51 @@ ASTNode* parse_statement(void) {
             n->right = parse_suite();
         }
         def_mode--;
+        return n;
+    }
+
+    if (curr_tok.type == TOK_TRY) {
+        ASTNode* n = make_node(AST_TRY);
+        ASTNode* tail = NULL;
+        next_token();
+        if (curr_tok.type == TOK_COLON) {
+            next_token();
+        }
+        if (n != NULL) {
+            n->left = parse_suite();
+        }
+        /* except clauses sit at the same indent, like elif */
+        while (curr_tok.type == TOK_NEWLINE) {
+            next_token();
+        }
+        while (curr_tok.type == TOK_EXCEPT) {
+            ASTNode* h = make_node(AST_EXCEPT);
+            next_token();
+            if (h != NULL) {
+                h->identifier[0] = '\0';
+                if (curr_tok.type == TOK_IDENTIFIER) {
+                    strcpy(h->identifier, curr_tok.text);
+                    next_token();
+                }
+            } else if (curr_tok.type == TOK_IDENTIFIER) {
+                next_token();
+            }
+            if (curr_tok.type == TOK_COLON) {
+                next_token();
+            }
+            if (h != NULL) {
+                h->left = parse_suite();
+            }
+            if (tail == NULL) {
+                if (n != NULL) n->right = h;
+            } else {
+                tail->right = h;
+            }
+            tail = h;
+            while (curr_tok.type == TOK_NEWLINE) {
+                next_token();
+            }
+        }
         return n;
     }
 
@@ -961,7 +1040,7 @@ static const char module_random[] =
     "    return a+_rs[0]%(b-a+1)\n";
 
 ASTNode* import_module(const char* name) BANKED {
-    char local[16];
+    char local[NAME_MAX + 1];
     uint8_t i;
     /* the name lives in banked SRAM; copy it out before comparing */
     SWITCH_RAM(1);

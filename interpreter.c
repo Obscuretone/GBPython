@@ -10,7 +10,7 @@
 
 /* Environment Definitions */
 typedef struct EnvNode {
-    char identifier[16];
+    char identifier[NAME_MAX + 1];
     long value;
     uint8_t vtype;
     struct EnvNode* next;
@@ -107,7 +107,7 @@ void set_variable(const char* id, long val, uint8_t vtype, uint8_t str_bank) {
    every run, so definitions live only within the run that made them and
    the registry is cleared at the start of each run. */
 typedef struct FuncReg {
-    char name[16];
+    char name[NAME_MAX + 1];
     ASTNode* def;
     struct FuncReg* next;
 } FuncReg;
@@ -153,14 +153,15 @@ void register_func(const char* name, ASTNode* def) {
    instance is a dict whose first entry has a TYPE_NONE key (impossible
    from user code) holding the ClassReg pointer. */
 typedef struct MethodReg {
-    char name[16];
+    char name[NAME_MAX + 1];
     ASTNode* def;
     struct MethodReg* next;
 } MethodReg;
 
 typedef struct ClassReg {
-    char name[16];
+    char name[NAME_MAX + 1];
     MethodReg* methods;
+    struct ClassReg* parent; /* single inheritance */
     struct ClassReg* next;
 } ClassReg;
 
@@ -191,10 +192,13 @@ ClassReg* find_class(const char* name) {
 }
 
 MethodReg* find_method(ClassReg* c, const char* name) {
-    MethodReg* m = c->methods;
-    while (m) {
-        if (strcmp(m->name, name) == 0) return m;
-        m = m->next;
+    while (c) {
+        MethodReg* m = c->methods;
+        while (m) {
+            if (strcmp(m->name, name) == 0) return m;
+            m = m->next;
+        }
+        c = c->parent; /* walk up the inheritance chain */
     }
     return NULL;
 }
@@ -615,8 +619,16 @@ long evaluate(ASTNode* n) {
                 if (c != NULL) {
                     strcpy(c->name, n->identifier);
                     c->methods = NULL;
+                    c->parent = NULL;
                     c->next = classes;
                     classes = c;
+                }
+            }
+            if (c != NULL && n->left != NULL) {
+                c->parent = find_class(n->left->identifier);
+                if (c->parent == NULL) {
+                    raise_error_name("NameError", n->left->identifier);
+                    return 0;
                 }
             }
             if (c != NULL) {
@@ -627,6 +639,53 @@ long evaluate(ASTNode* n) {
             last_eval_type = TYPE_NONE;
             return 0;
         }
+        case AST_TRY: {
+            if (n->left) evaluate(n->left);
+            if (exec_signal == SIG_ERROR) {
+                ASTNode* h = n->right;
+                while (h) {
+                    uint8_t match = (h->identifier[0] == '\0');
+                    if (!match) {
+                        uint8_t k = 0;
+                        match = 1;
+                        while (h->identifier[k]) {
+                            if (err_buf[k] != h->identifier[k]) {
+                                match = 0;
+                                break;
+                            }
+                            k++;
+                        }
+                        /* prefix must end the error name exactly */
+                        if (match && err_buf[k] != '\0' && err_buf[k] != ':') {
+                            match = 0;
+                        }
+                    }
+                    if (match) {
+                        exec_signal = SIG_NONE;
+                        if (h->left) evaluate(h->left);
+                        break;
+                    }
+                    h = h->right;
+                }
+            }
+            last_eval_type = TYPE_NONE;
+            return 0;
+        }
+        case AST_RAISE: {
+            if (n->left) {
+                long msg = evaluate(n->left);
+                if (exec_signal == SIG_ERROR) return 0;
+                if (last_eval_type == TYPE_STR) {
+                    fetch_str(sbuf_l, msg, last_eval_str_bank);
+                    raise_error_name(n->identifier, sbuf_l);
+                    return 0;
+                }
+            }
+            raise_error(n->identifier);
+            return 0;
+        }
+        case AST_EXCEPT:
+            return 0; /* handled inside AST_TRY */
         case AST_GLOBAL: {
             /* only meaningful inside a function */
             if (frame_base != NULL) {
@@ -1449,6 +1508,8 @@ void exec_statement(ASTNode* n) {
         case AST_IMPORT:
         case AST_SETATTR:
         case AST_GLOBAL:
+        case AST_TRY:
+        case AST_RAISE:
             evaluate(n);
             if (exec_signal != SIG_ERROR) {
                 exec_signal = SIG_NONE; /* stray signals stop at top level */

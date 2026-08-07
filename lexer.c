@@ -46,6 +46,9 @@ static TokenType keyword_type(const char* text) {
     if (strcmp(text, "class") == 0) return TOK_CLASS;
     if (strcmp(text, "import") == 0) return TOK_IMPORT;
     if (strcmp(text, "global") == 0) return TOK_GLOBAL;
+    if (strcmp(text, "try") == 0) return TOK_TRY;
+    if (strcmp(text, "except") == 0) return TOK_EXCEPT;
+    if (strcmp(text, "raise") == 0) return TOK_RAISE;
     return TOK_IDENTIFIER;
 }
 
@@ -249,7 +252,7 @@ void next_token(void) {
         src_ptr++; /* skip opening quote */
         curr_tok.type = TOK_STRING;
         i = 0;
-        while (*src_ptr != quote && *src_ptr != '\0' && i < 15) {
+        while (*src_ptr != quote && *src_ptr != '\0' && i < NAME_MAX) {
             curr_tok.text[i++] = *src_ptr++;
         }
         curr_tok.text[i] = '\0';
@@ -292,7 +295,7 @@ void next_token(void) {
     if (isalpha(*src_ptr) || *src_ptr == '_') {
         curr_tok.type = TOK_IDENTIFIER;
         i = 0;
-        while ((isalpha(*src_ptr) || isdigit(*src_ptr) || *src_ptr == '_') && i < 15) {
+        while ((isalpha(*src_ptr) || isdigit(*src_ptr) || *src_ptr == '_') && i < NAME_MAX) {
             curr_tok.text[i++] = *src_ptr++;
         }
         curr_tok.text[i] = '\0';

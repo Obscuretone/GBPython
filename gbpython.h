@@ -77,6 +77,9 @@ typedef enum {
     TOK_CLASS,
     TOK_IMPORT,
     TOK_GLOBAL,
+    TOK_TRY,
+    TOK_EXCEPT,
+    TOK_RAISE,
     TOK_LBRACKET,
     TOK_RBRACKET,
     TOK_LBRACE,
@@ -89,9 +92,11 @@ typedef enum {
     TOK_DEDENT
 } TokenType;
 
+#define NAME_MAX 19 /* fits ZeroDivisionError */
+
 typedef struct {
     TokenType type;
-    char text[16];
+    char text[NAME_MAX + 1];
     long value;      /* int value, or float bits when is_float */
     uint8_t is_float;
 } Token;
@@ -158,16 +163,24 @@ typedef enum {
     AST_METHOD, /* left = base expr, identifier = method, right = arg chain */
     AST_IMPORT, /* identifier = module name */
     AST_GLOBAL, /* left = AST_PARAM name chain */
+    AST_TRY,    /* left = body, right = AST_EXCEPT chain */
+    AST_EXCEPT, /* identifier = filter ('' = bare), left = handler, right = next */
+    AST_RAISE,  /* identifier = error name, left = optional message expr */
     AST_SEQ
 } ASTNodeType;
 
+/* identifier sits at the tail: node types that don't carry a name are
+   allocated short (make_node), which more than doubles arena capacity —
+   most nodes are operators and sequence links. */
 typedef struct ASTNode {
-    ASTNodeType type;
+    uint8_t type; /* ASTNodeType */
     long number;
-    char identifier[16];
     struct ASTNode* left;
     struct ASTNode* right;
+    char identifier[NAME_MAX + 1];
 } ASTNode;
+
+#define AST_NODE_SHORT (sizeof(ASTNode) - (NAME_MAX + 1))
 
 ASTNode* make_node(ASTNodeType type);
 ASTNode* parse_program(void) BANKED;
@@ -213,7 +226,7 @@ extern uint8_t exec_signal;
 extern long return_value;
 extern uint8_t return_type;
 extern uint8_t return_str_bank;
-extern char err_buf[28];
+extern char err_buf[40];
 void raise_error(const char* msg);
 void raise_error_name(const char* kind, const char* name);
 void raise_memory_error(void);

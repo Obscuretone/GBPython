@@ -66,15 +66,39 @@ void sram_ast_reset(void) {
     sram_ast_ptr = (uint8_t*)0xA000;
 }
 
+/* Node types that carry a name in ->identifier get a full allocation */
+static uint8_t node_has_name(ASTNodeType t) {
+    switch (t) {
+        case AST_IDENTIFIER:
+        case AST_STRING:
+        case AST_ASSIGN:
+        case AST_FOR:
+        case AST_FORIN:
+        case AST_DEF:
+        case AST_PARAM:
+        case AST_CALL:
+        case AST_ATTR:
+        case AST_METHOD:
+        case AST_CLASS:
+        case AST_IMPORT:
+        case AST_RAISE:
+        case AST_EXCEPT:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
 ASTNode* make_node(ASTNodeType type) {
     /* Caller (run_interpreter) keeps SRAM enabled for the whole parse/eval
        cycle; disabling here would drop the field writes below on real
        hardware. */
     ASTNode* n;
     SWITCH_RAM(1);
-    n = (ASTNode*)sram_ast_alloc(sizeof(ASTNode));
+    n = (ASTNode*)sram_ast_alloc(node_has_name(type) ? sizeof(ASTNode)
+                                                     : AST_NODE_SHORT);
     if (n != NULL) {
-        n->type = type;
+        n->type = (uint8_t)type;
         n->left = NULL;
         n->right = NULL;
     }
@@ -95,7 +119,7 @@ long return_value;
 uint8_t return_type;
 uint8_t return_str_bank;
 
-char err_buf[28];
+char err_buf[40];
 
 void raise_error(const char* msg) {
     strcpy(err_buf, msg);
