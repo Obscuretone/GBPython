@@ -307,6 +307,20 @@ def run() -> int:
     print(f"boot ok ({time.time() - t0:.1f}s)")
 
     failures = 0
+
+    # The ROM boots with fizzbuzz pre-typed: run it before anything else
+    # touches the input buffer.
+    t0 = time.time()
+    gb.press_run()
+    gb.wait_run_done()
+    gb.frames(5)
+    got = [line.strip() for line in gb.screen()[7:12] if line.strip()]
+    ok = got == ["11", "fizz", "13", "14", "fizzbuzz"]
+    print(f"  {'ok' if ok else 'FAIL':4} pre-typed fizzbuzz boots ({time.time() - t0:.1f}s)")
+    if not ok:
+        failures += 1
+        print(f"       got: {got}")
+
     for label, source, expected in CASES:
         t0 = time.time()
         got = gb.repl(source)
@@ -419,7 +433,7 @@ def run() -> int:
         failures += 1
         print(f"       bad tiles: {bad}")
 
-    total = len(CASES) + len(examples) + len(osk_cases) + 4
+    total = len(CASES) + len(examples) + len(osk_cases) + 5
     print(f"\n{total - failures}/{total} passed")
     return 1 if failures else 0
 

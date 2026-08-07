@@ -1,5 +1,7 @@
 # GBPython
 
+[![CI](https://github.com/Obscuretone/GBPython/actions/workflows/ci.yml/badge.svg)](https://github.com/Obscuretone/GBPython/actions/workflows/ci.yml)
+
 A Python interpreter that runs on the Nintendo Game Boy (DMG).
 
 Programs are typed on an on-screen keyboard and executed by a tree-walking
@@ -118,7 +120,7 @@ the real on-screen keyboard end-to-end — including one that answers an
 part of the suite, checked against their `# expect:` comments.
 
 ```
-180/180 passed
+227/227 passed
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the interpreter
