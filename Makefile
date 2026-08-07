@@ -4,10 +4,10 @@ LCC := $(GBDK_HOME)/bin/lcc
 # MBC5+RAM+BATTERY, 4 SRAM banks (matches SWITCH_RAM(1)/SWITCH_RAM(2) usage)
 # -Wl-m/-Wl-j regenerate the .map/.noi symbol files the test harness reads;
 # stale symbols make the harness poke the wrong WRAM addresses.
-LCCFLAGS := -Wm-yt0x1B -Wm-ya4 -Wm-yn"GBPYTHON" -Wl-m -Wl-j
+LCCFLAGS := -Wm-yoA -Wm-yt0x1B -Wm-ya4 -Wm-yn"GBPYTHON" -Wl-m -Wl-j
 
 ROM := gbpython.gb
-SRC := gbpython.c lexer.c runtime.c interpreter.c
+SRC := gbpython.c lexer.c runtime.c parser.c interpreter.c
 
 all: $(ROM)
 

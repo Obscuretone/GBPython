@@ -81,6 +81,66 @@ extern Token curr_tok;
 void lexer_reset(const char* src);
 void next_token(void);
 
+/* AST (nodes built by parser.c in ROM bank 2, allocated by make_node in
+   runtime.c, evaluated by interpreter.c in ROM bank 1) */
+typedef enum {
+    AST_NUMBER,
+    AST_IDENTIFIER,
+    AST_STRING,
+    AST_ADD,
+    AST_SUB,
+    AST_MUL,
+    AST_DIV,
+    AST_MOD,
+    AST_NEG,
+    AST_EQEQ,
+    AST_NEQ,
+    AST_LT,
+    AST_GT,
+    AST_LE,
+    AST_GE,
+    AST_AND,
+    AST_OR,
+    AST_NOT,
+    AST_ASSIGN,
+    AST_WHILE,
+    AST_IF,     /* left = condition, right = AST_ELSE pair */
+    AST_ELSE,   /* left = then-block, right = else-block (or NULL) */
+    AST_FOR,    /* identifier = loop var, left = AST_RANGE, right = body */
+    AST_RANGE,  /* left = first arg, right = NULL or AST_RANGE(stop, step) */
+    AST_PRINT,  /* left = expression or NULL */
+    AST_DEF,    /* identifier = name, left = param chain, right = body */
+    AST_PARAM,  /* identifier = param name, right = next param */
+    AST_CALL,   /* identifier = name, left = arg chain */
+    AST_ARG,    /* left = expression, right = next arg */
+    AST_RETURN, /* left = expression or NULL */
+    AST_BREAK,
+    AST_CONTINUE,
+    AST_PASS,
+    AST_INDEX,  /* left = base expression, right = index expression */
+    AST_LIST,   /* left = AST_ARG element chain */
+    AST_STORE,  /* left = AST_INDEX target, right = value expression */
+    AST_FORIN,  /* identifier = loop var, left = iterable expr, right = body */
+    AST_BOOL,   /* number = 0 or 1 */
+    AST_NONE,
+    AST_IN,     /* left = needle, right = haystack (list or string) */
+    AST_SLICE,  /* left = base, right = AST_ARG(start-or-NULL, stop-or-NULL) */
+    AST_DICT,   /* left = AST_ARG chain, alternating key, value, key, ... */
+    AST_MULTI,  /* left = AST_PARAM target chain, right = AST_ARG value chain */
+    AST_SEQ
+} ASTNodeType;
+
+typedef struct ASTNode {
+    ASTNodeType type;
+    int number;
+    char identifier[16];
+    struct ASTNode* left;
+    struct ASTNode* right;
+} ASTNode;
+
+ASTNode* make_node(ASTNodeType type);
+ASTNode* parse_program(void) BANKED;
+
 /* Runtime (runtime.c, ROM bank 0): arenas, values, output, errors */
 
 /* Value types */

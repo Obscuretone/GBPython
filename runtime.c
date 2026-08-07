@@ -66,6 +66,21 @@ void sram_ast_reset(void) {
     sram_ast_ptr = (uint8_t*)0xA000;
 }
 
+ASTNode* make_node(ASTNodeType type) {
+    /* Caller (run_interpreter) keeps SRAM enabled for the whole parse/eval
+       cycle; disabling here would drop the field writes below on real
+       hardware. */
+    ASTNode* n;
+    SWITCH_RAM(1);
+    n = (ASTNode*)sram_ast_alloc(sizeof(ASTNode));
+    if (n != NULL) {
+        n->type = type;
+        n->left = NULL;
+        n->right = NULL;
+    }
+    return n;
+}
+
 /* --- Value channel -------------------------------------------------------
    Type (and, for strings, SRAM bank) of the value evaluate() just
    produced. */
