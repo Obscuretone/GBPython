@@ -712,11 +712,7 @@ static long eval_call(ASTNode* n) {
             uint8_t argc = 0;
             uint8_t i;
             ASTNode* a = n->left;
-            ASTNode* param;
             FuncReg* f;
-            EnvNode* saved_head;
-            EnvNode* saved_frame;
-            long result = 0;
 
             while (a && argc < 4) {
                 argv[argc] = evaluate(a->left);

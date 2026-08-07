@@ -367,7 +367,6 @@ ASTNode* parse_comparison(void) {
         TokenType op = curr_tok.type;
         ASTNodeType ast_op;
         ASTNode* right;
-        ASTNode* n;
         uint8_t negate = 0;
 
         if (op == TOK_NOT) {
