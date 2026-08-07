@@ -87,7 +87,7 @@ generators, comprehensions, or `with`.
 | Button | Action |
 |---|---|
 | D-pad | Move keyboard cursor (wraps at row ends) |
-| A | Type character (▶ key = run the program) |
+| A | Type character (▶ key = run; the program stays for editing — press ▶ again to clear) |
 | Select + A | Shift: type uppercase letter |
 | B | Backspace |
 | Select (tap) | Space |

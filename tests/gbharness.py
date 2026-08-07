@@ -117,12 +117,14 @@ class GBPython:
         self.mem.storage[buf : buf + len(data)] = data
         self.mem.storage[buf + len(data)] = 0
         self.mem.storage[ln] = len(data)
+        # the ROM keeps the last program for editing; make RUN run, not clear
+        self.mem.storage[self.syms["_program_ran"]] = 0
 
     def wait_run_done(self, max_frames: int = 3000) -> None:
-        """run_interpreter clears input_len when it finishes."""
-        ln = self.syms["_input_len"]
+        """run_interpreter bumps runs_done when it finishes."""
+        rd = self.syms["_runs_done"]
         waited = 0
-        while self.mem.storage[ln] != 0:
+        while self.mem.storage[rd] == self._runs_before:
             self.frames(10)
             waited += 10
             if waited > max_frames:
@@ -130,6 +132,7 @@ class GBPython:
 
     def press_run(self) -> None:
         """Navigate to the RUN key (the '\\n' grid slot) and press A."""
+        self._runs_before = self.mem.storage[self.syms["_runs_done"]]
         self.move_cursor("\n")
         self.press("a_button", hold=3, release=3)
 
@@ -209,6 +212,11 @@ class GBPython:
         return bytes(self.mem.storage[addr : addr + 16])
 
     def type_source(self, text: str) -> None:
+        # start from an empty program (the ROM keeps the previous one)
+        buf = self.syms["_input_buffer"]
+        self.mem.storage[self.syms["_input_len"]] = 0
+        self.mem.storage[buf] = 0
+        self.mem.storage[self.syms["_program_ran"]] = 0
         for ch in text:
             self.type_char(ch)
 

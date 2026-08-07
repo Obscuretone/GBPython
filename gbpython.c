@@ -19,6 +19,8 @@ uint8_t cursor_row = 0;
 uint8_t cursor_col = 0;
 char input_buffer[INPUT_MAX + 1] = "";
 uint8_t input_len = 0;
+uint8_t runs_done = 0;   /* increments when a run finishes (tests poll it) */
+uint8_t program_ran = 0; /* last RUN wasn't followed by an edit */
 
 /* Play-triangle glyph for the RUN key, loaded into font tile slot 96
    (the spectrum font uses 0-95; the boot-time inversion loop copies 0-127
@@ -149,9 +151,18 @@ void main(void) {
         if (pressed & J_A) {
             selected_char = osk_grid[cursor_row][cursor_col];
             if (selected_char == '\n') {
-                /* the RUN key executes the program */
-                run_interpreter();
+                if (program_ran) {
+                    /* second RUN press: clear out the old program */
+                    input_len = 0;
+                    input_buffer[0] = '\0';
+                    draw_input_buffer();
+                    program_ran = 0;
+                } else {
+                    run_interpreter();
+                    program_ran = 1;
+                }
             } else {
+                program_ran = 0; /* editing keeps the program for re-run */
                 /* SELECT held while typing acts as shift: uppercase */
                 if (keys & J_SELECT) {
                     if (selected_char >= 'a' && selected_char <= 'z') {
@@ -168,6 +179,7 @@ void main(void) {
         }
 
         if (pressed & J_B) {
+            program_ran = 0;
             if (input_len > 0) {
                 input_len--;
                 input_buffer[input_len] = '\0';
@@ -182,6 +194,7 @@ void main(void) {
         }
         if ((last_keys & J_SELECT) && !(keys & J_SELECT)) {
             if (!select_used_as_shift && input_len < INPUT_MAX) {
+                program_ran = 0;
                 input_buffer[input_len++] = ' ';
                 input_buffer[input_len] = '\0';
                 draw_input_buffer();
@@ -192,6 +205,7 @@ void main(void) {
             /* START types a newline: multi-line programs without leaving
                the keyboard */
             if (input_len < INPUT_MAX) {
+                program_ran = 0;
                 input_buffer[input_len++] = '\n';
                 input_buffer[input_len] = '\0';
                 draw_input_buffer();

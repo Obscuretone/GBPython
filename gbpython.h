@@ -10,6 +10,7 @@
 extern char input_buffer[INPUT_MAX + 1];
 extern uint8_t input_len;
 extern uint8_t out_count;
+extern uint8_t runs_done;
 
 #define OSK_ROWS 4
 #define OSK_COLS 15

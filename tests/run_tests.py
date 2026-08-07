@@ -368,6 +368,27 @@ def run() -> int:
         failures += 1
         print(f"       got: {got}")
 
+    # The program stays after a run, edits re-run, a second RUN clears.
+    t0 = time.time()
+    gb.type_source("7*3")
+    got = gb.run_typed()
+    kept = "7*3" in gb.screen_text()
+    gb.type_char("1")  # edit: program becomes 7*31
+    got2 = gb.run_typed()
+    gb.press_run()  # program_ran is set: this press clears instead
+    gb.frames(5)
+    cleared = gb.mem.storage[gb.syms["_input_len"]] == 0
+    ok = (
+        [l for l in got if l] == ["> 21"]
+        and kept
+        and [l for l in got2 if l] == ["> 217"]
+        and cleared
+    )
+    print(f"  {'ok' if ok else 'FAIL':4} keep/edit/clear flow ({time.time() - t0:.1f}s)")
+    if not ok:
+        failures += 1
+        print(f"       got={got} kept={kept} got2={got2} cleared={cleared}")
+
     # Cursor wraps horizontally at row ends.
     t0 = time.time()
     gb.move_cursor("1")  # (0, 0)
@@ -398,7 +419,7 @@ def run() -> int:
         failures += 1
         print(f"       bad tiles: {bad}")
 
-    total = len(CASES) + len(examples) + len(osk_cases) + 3
+    total = len(CASES) + len(examples) + len(osk_cases) + 4
     print(f"\n{total - failures}/{total} passed")
     return 1 if failures else 0
 

@@ -1681,9 +1681,8 @@ void run_interpreter(void) BANKED {
     /* Protect SRAM from corruption during non-write states */
     DISABLE_RAM;
 
-    /* Clear input buffer after command execution to start a fresh line */
-    input_len = 0;
-    input_buffer[0] = '\0';
-    draw_input_buffer();
+    /* The program stays in the input pane so it can be edited and
+       re-run; the main loop clears it on a second RUN press. */
+    runs_done++;
 }
 
