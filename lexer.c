@@ -49,6 +49,7 @@ static TokenType keyword_type(const char* text) {
     if (strcmp(text, "try") == 0) return TOK_TRY;
     if (strcmp(text, "except") == 0) return TOK_EXCEPT;
     if (strcmp(text, "raise") == 0) return TOK_RAISE;
+    if (strcmp(text, "finally") == 0) return TOK_FINALLY;
     return TOK_IDENTIFIER;
 }
 

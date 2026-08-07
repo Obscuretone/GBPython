@@ -859,6 +859,19 @@ ASTNode* parse_statement(void) {
                 next_token();
             }
         }
+        if (curr_tok.type == TOK_FINALLY) {
+            ASTNode* fin;
+            next_token();
+            if (curr_tok.type == TOK_COLON) {
+                next_token();
+            }
+            fin = parse_suite();
+            if (n != NULL) {
+                /* the number slot carries the finally suite (AST_TRY is a
+                   short node otherwise) */
+                n->number = (long)(uint16_t)fin;
+            }
+        }
         return n;
     }
 

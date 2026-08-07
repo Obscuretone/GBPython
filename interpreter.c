@@ -655,6 +655,7 @@ long evaluate(ASTNode* n) {
             return 0;
         }
         case AST_TRY: {
+            ASTNode* fin;
             if (n->left) evaluate(n->left);
             if (exec_signal == SIG_ERROR) {
                 ASTNode* h = n->right;
@@ -681,6 +682,26 @@ long evaluate(ASTNode* n) {
                         break;
                     }
                     h = h->right;
+                }
+            }
+            fin = (ASTNode*)(uint16_t)n->number;
+            if (fin != NULL) {
+                /* finally runs on every exit path; a pending error or
+                   return survives it unless finally itself raises */
+                uint8_t saved_sig = exec_signal;
+                char saved_err[40];
+                long saved_rv = return_value;
+                uint8_t saved_rt = return_type;
+                uint8_t saved_rb = return_str_bank;
+                strcpy(saved_err, err_buf);
+                exec_signal = SIG_NONE;
+                evaluate(fin);
+                if (exec_signal == SIG_NONE && saved_sig != SIG_NONE) {
+                    exec_signal = saved_sig;
+                    strcpy(err_buf, saved_err);
+                    return_value = saved_rv;
+                    return_type = saved_rt;
+                    return_str_bank = saved_rb;
                 }
             }
             last_eval_type = TYPE_NONE;

@@ -86,6 +86,7 @@ typedef enum {
     TOK_TRY,
     TOK_EXCEPT,
     TOK_RAISE,
+    TOK_FINALLY,
     TOK_LBRACKET,
     TOK_RBRACKET,
     TOK_LBRACE,
@@ -169,7 +170,7 @@ typedef enum {
     AST_METHOD, /* left = base expr, identifier = method, right = arg chain */
     AST_IMPORT, /* identifier = module name */
     AST_GLOBAL, /* left = AST_PARAM name chain */
-    AST_TRY,    /* left = body, right = AST_EXCEPT chain */
+    AST_TRY,    /* left = body, right = AST_EXCEPT chain; number = finally suite ptr */
     AST_EXCEPT, /* identifier = filter ('' = bare), left = handler, right = next */
     AST_RAISE,  /* identifier = error name, left = optional message expr */
     AST_SUPER,  /* only valid as a method-call base: super().m(...) */
