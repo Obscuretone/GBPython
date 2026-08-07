@@ -172,6 +172,7 @@ typedef enum {
     AST_TRY,    /* left = body, right = AST_EXCEPT chain */
     AST_EXCEPT, /* identifier = filter ('' = bare), left = handler, right = next */
     AST_RAISE,  /* identifier = error name, left = optional message expr */
+    AST_SUPER,  /* only valid as a method-call base: super().m(...) */
     AST_SEQ
 } ASTNodeType;
 

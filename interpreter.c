@@ -152,9 +152,12 @@ void register_func(const char* name, ASTNode* def) {
    def arena, so classes survive across runs like functions do. An
    instance is a dict whose first entry has a TYPE_NONE key (impossible
    from user code) holding the ClassReg pointer. */
+struct ClassReg;
+
 typedef struct MethodReg {
     char name[NAME_MAX + 1];
     ASTNode* def;
+    struct ClassReg* owner; /* defining class, for super() */
     struct MethodReg* next;
 } MethodReg;
 
@@ -167,6 +170,8 @@ typedef struct ClassReg {
 
 ClassReg* classes = NULL;
 ClassReg* current_class = NULL; /* set while evaluating a class body */
+ClassReg* exec_class = NULL;    /* class owning the currently running method */
+long exec_self = 0;             /* the instance the running method was called on */
 
 void classes_clear(void) {
     while (classes) {
@@ -191,13 +196,20 @@ ClassReg* find_class(const char* name) {
     return NULL;
 }
 
+/* Only this class's own methods — used when registering overrides */
+MethodReg* find_own_method(ClassReg* c, const char* name) {
+    MethodReg* m = c->methods;
+    while (m) {
+        if (strcmp(m->name, name) == 0) return m;
+        m = m->next;
+    }
+    return NULL;
+}
+
 MethodReg* find_method(ClassReg* c, const char* name) {
     while (c) {
-        MethodReg* m = c->methods;
-        while (m) {
-            if (strcmp(m->name, name) == 0) return m;
-            m = m->next;
-        }
+        MethodReg* m = find_own_method(c, name);
+        if (m != NULL) return m;
         c = c->parent; /* walk up the inheritance chain */
     }
     return NULL;
@@ -597,7 +609,7 @@ long evaluate(ASTNode* n) {
         }
         case AST_DEF:
             if (current_class != NULL) {
-                MethodReg* m = find_method(current_class, n->identifier);
+                MethodReg* m = find_own_method(current_class, n->identifier);
                 if (m == NULL) {
                     m = (MethodReg*)malloc(sizeof(MethodReg));
                     if (m != NULL) {
@@ -606,7 +618,10 @@ long evaluate(ASTNode* n) {
                         current_class->methods = m;
                     }
                 }
-                if (m != NULL) m->def = n;
+                if (m != NULL) {
+                    m->def = n;
+                    m->owner = current_class;
+                }
             } else {
                 register_func(n->identifier, n);
             }
@@ -861,6 +876,10 @@ static long eval_call(ASTNode* n) {
                     dict_set(inst, TYPE_NONE, 0, TYPE_INT, (long)(uint16_t)c);
                     init = find_method(c, "__init__");
                     if (init != NULL) {
+                        ClassReg* saved_exec = exec_class;
+                        long saved_self = exec_self;
+                        exec_class = init->owner;
+                        exec_self = inst;
                         long margv[4];
                         uint8_t mat[4];
                         uint8_t mab[4];
@@ -874,6 +893,8 @@ static long eval_call(ASTNode* n) {
                         }
                         invoke_function(init->def, n->identifier,
                                         margv, mat, mab, argc + 1);
+                        exec_class = saved_exec;
+                        exec_self = saved_self;
                         if (exec_signal == SIG_ERROR) return 0;
                     }
                     last_eval_type = TYPE_OBJ;
@@ -1450,7 +1471,21 @@ static long eval_method(ASTNode* n) {
     long kv2, vv2;
 
     uint8_t btype, bbank;
-    argv[0] = evaluate(n->left); /* self */
+    ClassReg* start_class = NULL;
+    if (n->left != NULL && n->left->type == AST_SUPER) {
+        /* super().m(...): the running method's instance, lookup from the
+           defining class's parent */
+        if (exec_class == NULL || exec_class->parent == NULL ||
+            exec_self == 0) {
+            raise_error("RuntimeError: super");
+            return 0;
+        }
+        argv[0] = exec_self;
+        last_eval_type = TYPE_OBJ;
+        start_class = exec_class->parent;
+    } else {
+        argv[0] = evaluate(n->left); /* self */
+    }
     btype = last_eval_type;
     bbank = last_eval_str_bank;
     arg_type[0] = btype;
@@ -1478,19 +1513,33 @@ static long eval_method(ASTNode* n) {
         return 0;
     }
     /* entry 0 is the hidden class link (TYPE_NONE key) */
-    dict_entry((int)argv[0], 0, &kt2, &kv2, &vt2, &vv2);
-    if (kt2 != TYPE_NONE) {
-        raise_error("TypeError: method");
-        return 0;
+    if (start_class != NULL) {
+        c = start_class;
+    } else {
+        dict_entry((int)argv[0], 0, &kt2, &kv2, &vt2, &vv2);
+        if (kt2 != TYPE_NONE) {
+            raise_error("TypeError: method");
+            return 0;
+        }
+        c = (ClassReg*)(uint16_t)vv2;
     }
-    c = (ClassReg*)(uint16_t)vv2;
     m = find_method(c, n->identifier);
     if (m == NULL) {
         raise_error_name("AttributeError", n->identifier);
         return 0;
     }
-    return invoke_function(m->def, n->identifier, argv, arg_type,
-                           arg_bank, argc);
+    {
+        ClassReg* saved_exec = exec_class;
+        long saved_self = exec_self;
+        long r2;
+        exec_class = m->owner;
+        exec_self = argv[0];
+        r2 = invoke_function(m->def, n->identifier, argv, arg_type,
+                             arg_bank, argc);
+        exec_class = saved_exec;
+        exec_self = saved_self;
+        return r2;
+    }
 }
 
 /* Top-level execution: python REPL semantics. Expression statements echo
@@ -1551,6 +1600,8 @@ void full_reset(void) {
     funcs_clear();
     classes_clear();
     current_class = NULL;
+    exec_class = NULL;
+    exec_self = 0;
     frame_base = NULL;
     globals_head = NULL;
     sram_ast_reset();

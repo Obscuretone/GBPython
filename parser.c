@@ -44,7 +44,17 @@ ASTNode* parse_primary(void) {
         return n;
     }
     if (curr_tok.type == TOK_IDENTIFIER) {
-        ASTNode* n = make_node(AST_IDENTIFIER);
+        ASTNode* n;
+        if (strcmp(curr_tok.text, "super") == 0) {
+            const char* p = src_ptr;
+            while (*p == ' ') p++;
+            if (p[0] == '(' && p[1] == ')') {
+                src_ptr = p + 2;
+                next_token();
+                return make_node(AST_SUPER);
+            }
+        }
+        n = make_node(AST_IDENTIFIER);
         if (n != NULL) {
             strcpy(n->identifier, curr_tok.text);
         }
