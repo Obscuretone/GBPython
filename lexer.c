@@ -159,7 +159,11 @@ void next_token(void) {
     }
     if (*src_ptr == '/') {
         src_ptr++;
-        if (*src_ptr == '/') src_ptr++; /* '//' and '/' are both floor div */
+        if (*src_ptr == '/') {
+            src_ptr++;
+            curr_tok.type = TOK_FLOORDIV;
+            return;
+        }
         curr_tok.type = TOK_DIV;
         return;
     }
@@ -255,10 +259,30 @@ void next_token(void) {
     if (isdigit(*src_ptr)) {
         curr_tok.type = TOK_NUMBER;
         curr_tok.value = 0;
+        curr_tok.is_float = 0;
         while (isdigit(*src_ptr)) {
             curr_tok.value = curr_tok.value * 10 + (*src_ptr - '0');
             src_ptr++;
         }
+        if (*src_ptr == '.' && isdigit(src_ptr[1])) {
+            long f = f32_from_int(curr_tok.value);
+            long ten = f32_from_int(10);
+            long scale = f32_div(f32_from_int(1), ten);
+            src_ptr++;
+            while (isdigit(*src_ptr)) {
+                f = f32_add(f, f32_mul(f32_from_int(*src_ptr - '0'), scale));
+                scale = f32_div(scale, ten);
+                src_ptr++;
+            }
+            curr_tok.is_float = 1;
+            curr_tok.value = f;
+        }
+        return;
+    }
+
+    if (*src_ptr == '.') {
+        curr_tok.type = TOK_DOT;
+        src_ptr++;
         return;
     }
 

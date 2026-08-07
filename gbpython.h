@@ -10,11 +10,25 @@
 extern char input_buffer[INPUT_MAX + 1];
 extern uint8_t input_len;
 extern uint8_t out_count;
-void draw_input_buffer(void);
 
-/* Interactive line entry on the on-screen keyboard, used by input().
-   Writes up to maxlen chars + NUL into dst. */
-void ui_input_line(char* dst, uint8_t maxlen);
+#define OSK_ROWS 4
+#define OSK_COLS 15
+#define OSK_X 2
+#define OSK_Y 13
+extern char osk_grid[OSK_ROWS][OSK_COLS];
+extern uint8_t cursor_row;
+extern uint8_t cursor_col;
+void draw_osk(void);
+
+/* Banked UI (ui.c, ROM bank 3): splash, input editor, input() line entry */
+void splash_screen(void) BANKED;
+void draw_input_buffer(void) BANKED;
+void ui_input_line(char* dst, uint8_t maxlen) BANKED;
+
+/* Builtins dispatcher (builtins.c, ROM bank 3): returns 1 when name is a
+   builtin (result and value channel set), 0 to try user functions */
+uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
+                     uint8_t* arg_bank, uint8_t argc, long* result) BANKED;
 
 /* Interpreter entry point (interpreter.c, ROM bank 1) */
 void run_interpreter(void) BANKED;
@@ -29,7 +43,8 @@ typedef enum {
     TOK_PLUS,
     TOK_MINUS,
     TOK_MUL,
-    TOK_DIV,
+    TOK_DIV,      /* '/'  true division  */
+    TOK_FLOORDIV, /* '//' floor division */
     TOK_MOD,
     TOK_LPAREN,
     TOK_RPAREN,
@@ -63,6 +78,7 @@ typedef enum {
     TOK_RBRACKET,
     TOK_LBRACE,
     TOK_RBRACE,
+    TOK_DOT,
     TOK_COLON,
     TOK_SEMICOLON,
     TOK_NEWLINE,
@@ -73,7 +89,8 @@ typedef enum {
 typedef struct {
     TokenType type;
     char text[16];
-    int value;
+    long value;      /* int value, or float bits when is_float */
+    uint8_t is_float;
 } Token;
 
 extern const char* src_ptr;
@@ -90,7 +107,8 @@ typedef enum {
     AST_ADD,
     AST_SUB,
     AST_MUL,
-    AST_DIV,
+    AST_DIV,     /* floor division (//)   */
+    AST_TRUEDIV, /* true division (/), floats */
     AST_MOD,
     AST_NEG,
     AST_EQEQ,
@@ -123,16 +141,18 @@ typedef enum {
     AST_FORIN,  /* identifier = loop var, left = iterable expr, right = body */
     AST_BOOL,   /* number = 0 or 1 */
     AST_NONE,
+    AST_FLOAT,  /* number = IEEE-754 bits */
     AST_IN,     /* left = needle, right = haystack (list or string) */
     AST_SLICE,  /* left = base, right = AST_ARG(start-or-NULL, stop-or-NULL) */
     AST_DICT,   /* left = AST_ARG chain, alternating key, value, key, ... */
     AST_MULTI,  /* left = AST_PARAM target chain, right = AST_ARG value chain */
+    AST_CHAIN,  /* left = first operand; right = ARG links (number = op*2+negate) */
     AST_SEQ
 } ASTNodeType;
 
 typedef struct ASTNode {
     ASTNodeType type;
-    int number;
+    long number;
     char identifier[16];
     struct ASTNode* left;
     struct ASTNode* right;
@@ -150,6 +170,7 @@ ASTNode* parse_program(void) BANKED;
 #define TYPE_BOOL 3
 #define TYPE_NONE 4
 #define TYPE_DICT 5
+#define TYPE_FLOAT 6
 
 /* Control-flow signals */
 #define SIG_NONE 0
@@ -171,7 +192,7 @@ void sram_ast_reset(void);
 extern uint8_t last_eval_type;
 extern uint8_t last_eval_str_bank;
 extern uint8_t exec_signal;
-extern int return_value;
+extern long return_value;
 extern uint8_t return_type;
 extern uint8_t return_str_bank;
 extern char err_buf[28];
@@ -179,30 +200,50 @@ void raise_error(const char* msg);
 void raise_error_name(const char* kind, const char* name);
 void raise_memory_error(void);
 
-extern char sbuf_l[33];
-extern char sbuf_r[33];
-void fetch_str(char* dst, int val, uint8_t bank);
-int store_str_value(int val, uint8_t str_bank);
-int str_concat(void);
+#define STR_MAX 127
+extern char sbuf_l[STR_MAX + 1];
+extern char sbuf_r[STR_MAX + 1];
+void fetch_str(char* dst, long val, uint8_t bank);
+long store_str_value(long val, uint8_t str_bank);
+long str_concat(void);
+
+/* Soft-float (float32.c, bank 0): IEEE-754 single precision operations on
+   raw bit patterns carried in the 32-bit value slot */
+uint8_t f32_is_zero(long a) BANKED;
+long f32_neg(long a) BANKED;
+long f32_from_int(long v) BANKED;
+long f32_trunc(long a) BANKED;
+long f32_floor(long a) BANKED;
+int8_t f32_cmp(long a, long b) BANKED;
+long f32_add(long a, long b) BANKED;
+long f32_sub(long a, long b) BANKED;
+long f32_mul(long a, long b) BANKED;
+long f32_div(long a, long b) BANKED;
+/* value (int/bool/float) -> float bits */
+long num_to_f32(long v, uint8_t t);
+void render_float(long bits, char* buf) BANKED;
 
 int list_len(int ptr);
-int list_get(int ptr, int i, uint8_t* t);
-void list_set(int ptr, int i, int v, uint8_t t);
+long list_get(int ptr, int i, uint8_t* t);
+void list_set(int ptr, int i, long v, uint8_t t);
 int list_new(int len);
-uint8_t list_eq(int a, int b);
-uint8_t list_contains(int ptr, int lv, uint8_t lt, uint8_t lbank);
+uint8_t num_eq(uint8_t ta, long va, uint8_t tb, long vb) BANKED;
+uint8_t val_eq(uint8_t ta, long va, uint8_t tb, long vb) BANKED;
+uint8_t list_eq(int a, int b) BANKED;
+uint8_t dict_eq(int a, int b) BANKED;
+uint8_t list_contains(int ptr, long lv, uint8_t lt, uint8_t lbank) BANKED;
 
 int dict_new(void);
 int dict_len(int d);
-void dict_entry(int d, int i, uint8_t* kt, int* kv, uint8_t* vt, int* vv);
-int dict_find(int d, uint8_t kt, int kv, uint8_t kbank);
-uint8_t dict_set(int d, uint8_t kt, int kv, uint8_t vt, int vv);
+void dict_entry(int d, int i, uint8_t* kt, long* kv, uint8_t* vt, long* vv);
+int dict_find(int d, uint8_t kt, long kv, uint8_t kbank);
+uint8_t dict_set(int d, uint8_t kt, long kv, uint8_t vt, long vv);
 
-void out_redraw(void);
-void out_putline(const char* s);
+void out_redraw(void) BANKED;
+void out_putline(const char* s) BANKED;
 extern char line_buf[24];
-void render_list(int ptr, char* buf);
-void emit_value(int val, uint8_t vtype, uint8_t str_bank, uint8_t echo);
-uint8_t truthy(int val, uint8_t vtype, uint8_t str_bank);
+void render_list(int ptr, char* buf) BANKED;
+void emit_value(long val, uint8_t vtype, uint8_t str_bank, uint8_t echo) BANKED;
+uint8_t truthy(long val, uint8_t vtype, uint8_t str_bank);
 
 #endif

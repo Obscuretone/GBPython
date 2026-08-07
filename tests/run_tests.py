@@ -36,7 +36,8 @@ CASES: list[tuple[str, str, list[str]]] = [
     ("precedence", "1+2*3", ["> 7"]),
     ("parens", "(1+2)*3", ["> 9"]),
     ("subtraction", "10-4-3", ["> 3"]),
-    ("division", "17/5", ["> 3"]),
+    ("true division", "17/5;8/2", ["> 3.4", "> 4.0"]),
+    ("floor div int", "17//5", ["> 3"]),
     ("floor division", "7//2;-7//2", ["> 3", "> -4"]),
     ("python modulo", "-7%2;7%-2", ["> 1", "> -1"]),
     ("div by zero", "5/0", ["ZeroDivisionError"]),
@@ -114,7 +115,8 @@ CASES: list[tuple[str, str, list[str]]] = [
     # augmented assignment
     ("aug plus", "x=10;x+=5;x", ["> 15"]),
     ("aug minus mul", "x=9;x-=2;x*=3;x", ["> 21"]),
-    ("aug div mod", "x=17;x/=2;x%=5;x", ["> 3"]),
+    ("aug div mod", "x=17;x//=2;x%=5;x", ["> 3"]),
+    ("aug truediv", "x=7;x/=2;x", ["> 3.5"]),
     # break / continue / pass
     ("for break", "for i in range(9):\n    if i==3: break\n    print(i)", ["0", "1", "2"]),
     ("for continue", "for i in range(5):\n    if i%2==0: continue\n    print(i)", ["1", "3"]),
@@ -183,6 +185,32 @@ CASES: list[tuple[str, str, list[str]]] = [
     # arena exhaustion wipes state cleanly
     ("MemoryError wipe", "s='x'\nfor i in range(400): s=s+'y'", ["MemoryError", "(state cleared)"]),
     ("fresh after wipe", "q=41;q+1", ["> 42"]),
+    # floats (soft-float32)
+    ("float literal", "3.14", ["> 3.14"]),
+    ("float add", "0.5+0.25", ["> 0.75"]),
+    ("float mixed arith", "2*3.5;7%2.5", ["> 7.0", "> 2.0"]),
+    ("float compare", "1.5<2;2.5>=2.5", ["> True", "> True"]),
+    ("float int eq", "1==1.0", ["> True"]),
+    ("float floor div", "7.0//2", ["> 3.0"]),
+    ("float neg", "-2.5*2", ["> -5.0"]),
+    ("float conversions", "float(3);int(3.9);int(-3.9)", ["> 3.0", "> 3", "> -3"]),
+    ("float of str", "float('2.5')+1", ["> 3.5"]),
+    ("round", "round(2.6);round(-2.6);round(3)", ["> 3", "> -3", "> 3"]),
+    ("str of float", "str(1.5)+'!'", ["> '1.5!'"]),
+    ("float in list", "[1.5, 2]", ["> [1.5, 2]"]),
+    ("float builtins", "abs(-2.5);max(1,2.5);sum([0.5,0.5])", ["> 2.5", "> 2.5", "> 1.0"]),
+    # 32-bit ints
+    ("big multiply", "30000*30000", ["> 900000000"]),
+    ("big fib iterative", "a,b=0,1\nfor i in range(46): a,b=b,a+b\na", ["> 1836311903"]),
+    # recursion depth guard
+    ("RecursionError", "def rr(n):\n    return rr(n+1)\nrr(0)", ["RecursionError"]),
+    # lexical scoping: other frames' locals are invisible
+    ("no dynamic scoping", "def qin(): return qq\ndef qout():\n    qq=5\n    return qin()\nqout()", ["NameError: qq"]),
+    # dict equality by content
+    ("dict content eq", "{'a':1}=={'a':1};{'a':1}=={'a':2}", ["> True", "> False"]),
+    # comparison chains evaluate the middle operand once
+    ("chain single eval", "def see(x):\n    print(x)\n    return x\n1<see(2)<3", ["2", "> True"]),
+    ("long string", "u='0123456789'\nu=u+u+u+u+u+u\nlen(u)", ["> 60"]),
     # comments
     ("comment line", "# nothing\n5 # five", ["> 5"]),
     # output window scrolls, keeps last 5

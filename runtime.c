@@ -91,7 +91,7 @@ uint8_t last_eval_str_bank = 2;
    Raised by break/continue/return, consumed by the nearest enclosing loop
    or call. SIG_ERROR aborts the whole run. */
 uint8_t exec_signal = SIG_NONE;
-int return_value;
+long return_value;
 uint8_t return_type;
 uint8_t return_str_bank;
 
@@ -112,40 +112,46 @@ void raise_memory_error(void) {
 }
 
 /* --- Strings -------------------------------------------------------------
-   Scratch for string binops; bank-2 strings can be concat results (<=32) */
-char sbuf_l[33];
-char sbuf_r[33];
+   Scratch for string binops; strings cap at STR_MAX (127) chars */
+char sbuf_l[STR_MAX + 1];
+char sbuf_r[STR_MAX + 1];
 
-void fetch_str(char* dst, int val, uint8_t bank) {
+void fetch_str(char* dst, long val, uint8_t bank) {
     SWITCH_RAM(bank);
-    strcpy(dst, (char*)val);
+    strcpy(dst, (char*)(uint16_t)val);
     SWITCH_RAM(1);
+}
+
+/* value (int/bool/float) -> float bits */
+long num_to_f32(long v, uint8_t t) {
+    if (t == TYPE_FLOAT) return v;
+    return f32_from_int(v);
 }
 
 /* Bank-1 strings live in the AST arena, which is wiped after each run;
    copy them into the persistent bank-2 arena before storing. Bank-2
    pointers are shared as-is (strings are immutable). */
-int store_str_value(int val, uint8_t str_bank) {
-    char temp[33];
+long store_str_value(long val, uint8_t str_bank) {
+    char temp[STR_MAX + 1];
     char* str_copy;
     if (str_bank == 2) return val;
     SWITCH_RAM(1);
-    strcpy(temp, (char*)val);
+    strcpy(temp, (char*)(uint16_t)val);
     SWITCH_RAM(2);
     str_copy = (char*)sram_str_alloc(strlen(temp) + 1);
     if (str_copy != NULL) {
         strcpy(str_copy, temp);
     }
     SWITCH_RAM(1);
-    return str_copy != NULL ? (int)str_copy : 0;
+    return str_copy != NULL ? (long)(uint16_t)str_copy : 0;
 }
 
-/* Concatenate sbuf_l + sbuf_r (capped at 32 chars) into a new bank-2 string */
-int str_concat(void) {
+/* Concatenate sbuf_l + sbuf_r (capped at STR_MAX) into a new bank-2 string */
+long str_concat(void) {
     uint8_t ll = strlen(sbuf_l);
     uint8_t i = 0;
     char* dst;
-    while (ll < 32 && sbuf_r[i]) {
+    while (ll < STR_MAX && sbuf_r[i]) {
         sbuf_l[ll++] = sbuf_r[i++];
     }
     sbuf_l[ll] = '\0';
@@ -157,7 +163,7 @@ int str_concat(void) {
     SWITCH_RAM(1);
     last_eval_type = TYPE_STR;
     last_eval_str_bank = 2;
-    return dst != NULL ? (int)dst : 0;
+    return dst != NULL ? (long)(uint16_t)dst : 0;
 }
 
 /* --- Lists ---------------------------------------------------------------
@@ -173,85 +179,33 @@ int list_len(int ptr) {
     return v;
 }
 
-int list_get(int ptr, int i, uint8_t* t) {
-    int v;
-    int addr = ptr + 2 + 3 * i;
+long list_get(int ptr, int i, uint8_t* t) {
+    long v;
+    int addr = ptr + 2 + 5 * i;
     SWITCH_RAM(3);
     *t = *(uint8_t*)addr;
-    v = *(int*)(addr + 1);
+    v = *(long*)(addr + 1);
     SWITCH_RAM(1);
     return v;
 }
 
-void list_set(int ptr, int i, int v, uint8_t t) {
-    int addr = ptr + 2 + 3 * i;
+void list_set(int ptr, int i, long v, uint8_t t) {
+    int addr = ptr + 2 + 5 * i;
     SWITCH_RAM(3);
     *(uint8_t*)addr = t;
-    *(int*)(addr + 1) = v;
+    *(long*)(addr + 1) = v;
     SWITCH_RAM(1);
 }
 
 int list_new(int len) {
     uint8_t* p;
     SWITCH_RAM(3);
-    p = (uint8_t*)sram_list_alloc(2 + 3 * len);
+    p = (uint8_t*)sram_list_alloc(2 + 5 * len);
     if (p != NULL) {
         *(int*)p = len;
     }
     SWITCH_RAM(1);
     return p != NULL ? (int)p : 0;
-}
-
-/* Structural equality, python-style: [1,'a',[2]] == [1,'a',[2]] */
-uint8_t list_eq(int a, int b) {
-    int la = list_len(a);
-    int i;
-    if (la != list_len(b)) return 0;
-    for (i = 0; i < la; i++) {
-        uint8_t ta, tb;
-        int va = list_get(a, i, &ta);
-        int vb = list_get(b, i, &tb);
-        uint8_t na = (ta == TYPE_INT || ta == TYPE_BOOL);
-        uint8_t nb = (tb == TYPE_INT || tb == TYPE_BOOL);
-        if (na && nb) {
-            if (va != vb) return 0;
-        } else if (ta == TYPE_STR && tb == TYPE_STR) {
-            char x[33], y[33];
-            fetch_str(x, va, 2);
-            fetch_str(y, vb, 2);
-            if (strcmp(x, y) != 0) return 0;
-        } else if (ta == TYPE_LIST && tb == TYPE_LIST) {
-            if (!list_eq(va, vb)) return 0;
-        } else if (ta == TYPE_NONE && tb == TYPE_NONE) {
-            /* equal */
-        } else {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-/* Membership: needle (lv,lt) in list ptr */
-uint8_t list_contains(int ptr, int lv, uint8_t lt, uint8_t lbank) {
-    int len = list_len(ptr);
-    int i;
-    for (i = 0; i < len; i++) {
-        uint8_t et;
-        int ev = list_get(ptr, i, &et);
-        uint8_t nl_ = (lt == TYPE_INT || lt == TYPE_BOOL);
-        uint8_t ne = (et == TYPE_INT || et == TYPE_BOOL);
-        if (nl_ && ne) {
-            if (lv == ev) return 1;
-        } else if (lt == TYPE_STR && et == TYPE_STR) {
-            char x[33], y[33];
-            fetch_str(x, lv, lbank);
-            fetch_str(y, ev, 2);
-            if (strcmp(x, y) == 0) return 1;
-        } else if (lt == TYPE_LIST && et == TYPE_LIST) {
-            if (list_eq(lv, ev)) return 1;
-        }
-    }
-    return 0;
 }
 
 /* --- Dicts ---------------------------------------------------------------
@@ -262,7 +216,8 @@ uint8_t list_contains(int ptr, int lv, uint8_t lt, uint8_t lbank) {
    count is only meaningful in the head block. */
 
 #define DICT_BLOCK_ENTRIES 4
-#define DICT_BLOCK_SIZE (4 + DICT_BLOCK_ENTRIES * 6)
+#define DICT_ENTRY_SIZE 10 /* ktype u8, kval i32, vtype u8, vval i32 */
+#define DICT_BLOCK_SIZE (4 + DICT_BLOCK_ENTRIES * DICT_ENTRY_SIZE)
 
 int dict_new(void) {
     uint8_t* p;
@@ -291,33 +246,33 @@ static int dict_entry_addr(int d, int i) {
         d = *(int*)(d + 2);
         i -= DICT_BLOCK_ENTRIES;
     }
-    return d + 4 + 6 * i;
+    return d + 4 + DICT_ENTRY_SIZE * i;
 }
 
-void dict_entry(int d, int i, uint8_t* kt, int* kv, uint8_t* vt, int* vv) {
+void dict_entry(int d, int i, uint8_t* kt, long* kv, uint8_t* vt, long* vv) {
     int e;
     SWITCH_RAM(3);
     e = dict_entry_addr(d, i);
     *kt = *(uint8_t*)e;
-    *kv = *(int*)(e + 1);
-    *vt = *(uint8_t*)(e + 3);
-    *vv = *(int*)(e + 4);
+    *kv = *(long*)(e + 1);
+    *vt = *(uint8_t*)(e + 5);
+    *vv = *(long*)(e + 6);
     SWITCH_RAM(1);
 }
 
 /* Index of key in dict, or -1. Keys are ints, bools, or strings. */
-int dict_find(int d, uint8_t kt, int kv, uint8_t kbank) {
+int dict_find(int d, uint8_t kt, long kv, uint8_t kbank) {
     int n = dict_len(d);
     int i;
     uint8_t et, vt_;
-    int ev, vv_;
+    long ev, vv_;
     for (i = 0; i < n; i++) {
         dict_entry(d, i, &et, &ev, &vt_, &vv_);
         if ((kt == TYPE_INT || kt == TYPE_BOOL) &&
             (et == TYPE_INT || et == TYPE_BOOL)) {
             if (kv == ev) return i;
         } else if (kt == TYPE_STR && et == TYPE_STR) {
-            char x[33], y[33];
+            char x[STR_MAX + 1], y[STR_MAX + 1];
             fetch_str(x, kv, kbank);
             fetch_str(y, ev, 2);
             if (strcmp(x, y) == 0) return i;
@@ -328,14 +283,14 @@ int dict_find(int d, uint8_t kt, int kv, uint8_t kbank) {
 
 /* Set d[key] = value. Key strings must already be in bank 2. Returns 0 on
    allocation failure (error already raised). */
-uint8_t dict_set(int d, uint8_t kt, int kv, uint8_t vt, int vv) {
+uint8_t dict_set(int d, uint8_t kt, long kv, uint8_t vt, long vv) {
     int i = dict_find(d, kt, kv, 2);
     int e, blk, n;
     if (i >= 0) {
         SWITCH_RAM(3);
         e = dict_entry_addr(d, i);
-        *(uint8_t*)(e + 3) = vt;
-        *(int*)(e + 4) = vv;
+        *(uint8_t*)(e + 5) = vt;
+        *(long*)(e + 6) = vv;
         SWITCH_RAM(1);
         return 1;
     }
@@ -359,212 +314,32 @@ uint8_t dict_set(int d, uint8_t kt, int kv, uint8_t vt, int vv) {
         blk = (int)p;
         i -= DICT_BLOCK_ENTRIES;
     }
-    e = blk + 4 + 6 * i;
+    e = blk + 4 + DICT_ENTRY_SIZE * i;
     *(uint8_t*)e = kt;
-    *(int*)(e + 1) = kv;
-    *(uint8_t*)(e + 3) = vt;
-    *(int*)(e + 4) = vv;
+    *(long*)(e + 1) = kv;
+    *(uint8_t*)(e + 5) = vt;
+    *(long*)(e + 6) = vv;
     *(int*)d = n + 1;
     SWITCH_RAM(1);
     return 1;
 }
 
-/* --- Output window -------------------------------------------------------
-   Fixed lines under "--- Out ---". Keeping output inside this window
-   (instead of raw printf) stops long output from scrolling the gbdk
-   console and wrecking the screen layout. */
-
-#define OUT_ROWS 5
-char out_lines[OUT_ROWS][21];
-uint8_t out_count = 0;
-
-void out_redraw(void) {
-    uint8_t i, j;
-    for (i = 0; i < OUT_ROWS; i++) {
-        gotoxy(0, 7 + i);
-        j = 0;
-        if (i < out_count) {
-            while (out_lines[i][j]) {
-                putchar(out_lines[i][j]);
-                j++;
-            }
-        }
-        while (j < 20) {
-            putchar(' ');
-            j++;
-        }
-    }
-}
-
-void out_putline(const char* s) {
-    uint8_t i;
-    if (out_count == OUT_ROWS) {
-        for (i = 0; i < OUT_ROWS - 1; i++) {
-            strcpy(out_lines[i], out_lines[i + 1]);
-        }
-        out_count = OUT_ROWS - 1;
-    }
-    for (i = 0; i < 20 && s[i]; i++) {
-        out_lines[out_count][i] = s[i];
-    }
-    out_lines[out_count][i] = '\0';
-    out_count++;
-    out_redraw();
-}
-
-/* --- Value rendering -----------------------------------------------------
-   Render (possibly nested) values as python would, truncating with ".."
-   once the 20-column screen line is spent. */
-
-char line_buf[24];
-
-void render_val(uint8_t t, int v, char* buf, uint8_t* pos);
-
-void render_list_inner(int ptr, char* buf, uint8_t* pos) {
-    int len = list_len(ptr);
-    int i;
-    buf[(*pos)++] = '[';
-    for (i = 0; i < len; i++) {
-        uint8_t t;
-        int v = list_get(ptr, i, &t);
-        if (*pos > 14) {
-            buf[(*pos)++] = '.';
-            buf[(*pos)++] = '.';
-            break;
-        }
-        if (i) {
-            buf[(*pos)++] = ',';
-            buf[(*pos)++] = ' ';
-        }
-        render_val(t, v, buf, pos);
-    }
-    buf[(*pos)++] = ']';
-}
-
-void render_dict_inner(int d, char* buf, uint8_t* pos) {
-    int len = dict_len(d);
-    int i;
-    buf[(*pos)++] = '{';
-    for (i = 0; i < len; i++) {
-        uint8_t kt, vt;
-        int kv, vv;
-        if (*pos > 12) {
-            buf[(*pos)++] = '.';
-            buf[(*pos)++] = '.';
-            break;
-        }
-        dict_entry(d, i, &kt, &kv, &vt, &vv);
-        if (i) {
-            buf[(*pos)++] = ',';
-            buf[(*pos)++] = ' ';
-        }
-        render_val(kt, kv, buf, pos);
-        buf[(*pos)++] = ':';
-        buf[(*pos)++] = ' ';
-        render_val(vt, vv, buf, pos);
-    }
-    buf[(*pos)++] = '}';
-}
-
-void render_val(uint8_t t, int v, char* buf, uint8_t* pos) {
-    char tmp[20];
-    uint8_t nl;
-    if (t == TYPE_LIST || t == TYPE_DICT) {
-        if (*pos > 14) {
-            buf[(*pos)++] = '.';
-            buf[(*pos)++] = '.';
-            return;
-        }
-        if (t == TYPE_LIST) render_list_inner(v, buf, pos);
-        else render_dict_inner(v, buf, pos);
-        return;
-    }
-    if (t == TYPE_STR) {
-        uint8_t i = 0;
-        char* s = (char*)v;
-        tmp[i++] = '\'';
-        SWITCH_RAM(2); /* list/dict/str elements always live in bank 2 */
-        while (*s && i < 16) {
-            tmp[i++] = *s++;
-        }
-        SWITCH_RAM(1);
-        tmp[i++] = '\'';
-        tmp[i] = '\0';
-    } else if (t == TYPE_BOOL) {
-        strcpy(tmp, v ? "True" : "False");
-    } else if (t == TYPE_NONE) {
-        strcpy(tmp, "None");
-    } else {
-        sprintf(tmp, "%d", v);
-    }
-    nl = strlen(tmp);
-    if (*pos + nl > 17) {
-        buf[(*pos)++] = '.';
-        buf[(*pos)++] = '.';
-        return;
-    }
-    strcpy(buf + *pos, tmp);
-    *pos += nl;
-}
-
-void render_list(int ptr, char* buf) {
-    uint8_t pos = 0;
-    render_list_inner(ptr, buf, &pos);
-    buf[pos] = '\0';
-}
-
-/* Copy a string value out of banked SRAM, then emit it on the output
-   window. echo=1 gives the REPL "> 'x'" form, echo=0 the print() form. */
-void emit_value(int val, uint8_t vtype, uint8_t str_bank, uint8_t echo) {
-    if (vtype == TYPE_STR) {
-        char temp[33];
-        SWITCH_RAM(str_bank);
-        strcpy(temp, (char*)val);
-        SWITCH_RAM(1);
-        if (echo) {
-            sprintf(line_buf, "> '%s'", temp);
-        } else {
-            sprintf(line_buf, "%s", temp);
-        }
-    } else if (vtype == TYPE_LIST || vtype == TYPE_DICT) {
-        char temp[24];
-        uint8_t pos = 0;
-        if (vtype == TYPE_LIST) render_list_inner(val, temp, &pos);
-        else render_dict_inner(val, temp, &pos);
-        temp[pos] = '\0';
-        if (echo) {
-            sprintf(line_buf, "> %s", temp);
-        } else {
-            strcpy(line_buf, temp);
-        }
-    } else if (vtype == TYPE_BOOL) {
-        sprintf(line_buf, echo ? "> %s" : "%s", val ? "True" : "False");
-    } else if (vtype == TYPE_NONE) {
-        sprintf(line_buf, echo ? "> %s" : "%s", "None");
-    } else {
-        if (echo) {
-            sprintf(line_buf, "> %d", val);
-        } else {
-            sprintf(line_buf, "%d", val);
-        }
-    }
-    out_putline(line_buf);
-}
-
 /* Python truthiness: empty strings, lists and dicts are falsy, None is
    falsy */
-uint8_t truthy(int val, uint8_t vtype, uint8_t str_bank) {
+uint8_t truthy(long val, uint8_t vtype, uint8_t str_bank) {
     char c;
     switch (vtype) {
         case TYPE_STR:
             SWITCH_RAM(str_bank);
-            c = *(char*)val;
+            c = *(char*)(uint16_t)val;
             SWITCH_RAM(1);
             return c != '\0';
         case TYPE_LIST:
-            return list_len(val) > 0;
+            return list_len((int)val) > 0;
         case TYPE_DICT:
-            return dict_len(val) > 0;
+            return dict_len((int)val) > 0;
+        case TYPE_FLOAT:
+            return !f32_is_zero(val);
         case TYPE_NONE:
             return 0;
         default:

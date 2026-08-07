@@ -7,7 +7,7 @@ LCC := $(GBDK_HOME)/bin/lcc
 LCCFLAGS := -Wm-yoA -Wm-yt0x1B -Wm-ya4 -Wm-yn"GBPYTHON" -Wl-m -Wl-j
 
 ROM := gbpython.gb
-SRC := gbpython.c lexer.c runtime.c parser.c interpreter.c
+SRC := gbpython.c ui.c lexer.c float32.c runtime.c runtime2.c parser.c builtins.c interpreter.c
 
 all: $(ROM)
 

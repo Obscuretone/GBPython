@@ -28,7 +28,7 @@ ASTNode* parse_primary(void) {
         return make_node(AST_NONE);
     }
     if (curr_tok.type == TOK_NUMBER) {
-        ASTNode* n = make_node(AST_NUMBER);
+        ASTNode* n = make_node(curr_tok.is_float ? AST_FLOAT : AST_NUMBER);
         if (n != NULL) {
             n->number = curr_tok.value;
         }
@@ -214,13 +214,15 @@ ASTNode* parse_unary(void) {
 ASTNode* parse_multiplicative(void) {
     ASTNode* left = parse_unary();
     while (curr_tok.type == TOK_MUL || curr_tok.type == TOK_DIV ||
-           curr_tok.type == TOK_MOD) {
+           curr_tok.type == TOK_FLOORDIV || curr_tok.type == TOK_MOD) {
         TokenType op = curr_tok.type;
         ASTNode* right;
         ASTNode* n;
         next_token();
         right = parse_unary();
-        n = make_node(op == TOK_MUL ? AST_MUL : (op == TOK_DIV ? AST_DIV : AST_MOD));
+        n = make_node(op == TOK_MUL ? AST_MUL
+                      : (op == TOK_DIV ? AST_TRUEDIV
+                         : (op == TOK_FLOORDIV ? AST_DIV : AST_MOD)));
         if (n != NULL) {
             n->left = left;
             n->right = right;
@@ -248,10 +250,16 @@ ASTNode* parse_additive(void) {
     return left;
 }
 
+/* Comparison chains (a < b < c) become an AST_CHAIN: left = the first
+   operand, right = a linked list of AST_ARG links, each holding the
+   comparison op in ->number and the operand in ->left. The evaluator walks
+   the links so every operand evaluates exactly once, short-circuiting like
+   python. A single comparison keeps its plain node shape. */
 ASTNode* parse_comparison(void) {
     ASTNode* left = parse_additive();
-    ASTNode* chain = NULL; /* python chaining: a<b<c == (a<b) and (b<c) */
-    ASTNode* prev = left;
+    ASTNode* chain = NULL;
+    ASTNode* link_tail = NULL;
+    ASTNode* single = NULL;
     for (;;) {
         TokenType op = curr_tok.type;
         ASTNodeType ast_op;
@@ -292,31 +300,51 @@ ASTNode* parse_comparison(void) {
         else if (op == TOK_LE) ast_op = AST_LE;
         else ast_op = AST_GE;
 
-        n = make_node(ast_op);
-        if (n != NULL) {
-            n->left = prev;
-            n->right = right;
-        }
-        if (negate) {
-            ASTNode* neg = make_node(AST_NOT);
-            if (neg != NULL) {
-                neg->left = n;
+        if (single == NULL && chain == NULL) {
+            /* first comparison: plain node (the common case) */
+            single = make_node(ast_op);
+            if (single != NULL) {
+                single->left = left;
+                single->right = right;
             }
-            n = neg;
-        }
-        if (chain == NULL) {
-            chain = n;
+            if (negate) {
+                ASTNode* neg = make_node(AST_NOT);
+                if (neg != NULL) neg->left = single;
+                single = neg;
+            }
         } else {
-            ASTNode* and_node = make_node(AST_AND);
-            if (and_node != NULL) {
-                and_node->left = chain;
-                and_node->right = n;
+            ASTNode* link;
+            if (chain == NULL) {
+                /* second op appears: upgrade the single node to a chain.
+                   'not in' links keep their negation in the link flag. */
+                ASTNode* first = single;
+                uint8_t first_neg = 0;
+                if (first->type == AST_NOT) {
+                    first_neg = 1;
+                    first = first->left;
+                }
+                chain = make_node(AST_CHAIN);
+                link = make_node(AST_ARG);
+                if (chain != NULL && link != NULL) {
+                    chain->left = first->left;
+                    chain->right = link;
+                    link->number = (long)first->type * 2 + first_neg;
+                    link->left = first->right;
+                }
+                link_tail = link;
+                single = NULL;
             }
-            chain = and_node;
+            link = make_node(AST_ARG);
+            if (link != NULL && link_tail != NULL) {
+                link->number = (long)ast_op * 2 + negate;
+                link->left = right;
+                link_tail->right = link;
+            }
+            link_tail = link;
         }
-        prev = right; /* the middle operand re-evaluates; see README */
     }
-    return chain != NULL ? chain : left;
+    if (chain != NULL) return chain;
+    return single != NULL ? single : left;
 }
 
 ASTNode* parse_not(void) {
@@ -467,21 +495,24 @@ ASTNode* parse_simple(void) {
             }
             return n;
         }
-        if ((*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '%') &&
-            p[1] == '=') {
+        if (((*p == '+' || *p == '-' || *p == '*' || *p == '/' || *p == '%') &&
+             p[1] == '=') ||
+            (*p == '/' && p[1] == '/' && p[2] == '=')) {
             /* x op= e  desugars to  x = x op e */
             ASTNode* n;
             ASTNode* op_node;
             ASTNode* self_ref;
             ASTNodeType op_type;
+            uint8_t oplen = 2;
             char id[16];
             strcpy(id, curr_tok.text);
             if (*p == '+') op_type = AST_ADD;
             else if (*p == '-') op_type = AST_SUB;
             else if (*p == '*') op_type = AST_MUL;
-            else if (*p == '/') op_type = AST_DIV;
+            else if (*p == '/' && p[1] == '/') { op_type = AST_DIV; oplen = 3; }
+            else if (*p == '/') op_type = AST_TRUEDIV;
             else op_type = AST_MOD;
-            src_ptr = p + 2;
+            src_ptr = p + oplen;
             next_token();
             self_ref = make_node(AST_IDENTIFIER);
             op_node = make_node(op_type);
