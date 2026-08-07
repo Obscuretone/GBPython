@@ -41,7 +41,7 @@ banked SRAM.
 | 0 | unused (reserved) |
 | 1 | Two AST arenas: the **per-run arena** grows up from 0xA000 and is wiped after every run; **def subtrees** are allocated downward from 0xC000 and persist, which is what makes function definitions survive across runs like a real REPL. The parser sets `def_mode` while parsing a `def`, steering every node of that subtree to the persistent side. The two arenas colliding raises `MemoryError`. |
 | 2 | String arena. All stored strings (variables, list/dict elements, concat results) live here; string literals live in their AST node in bank 1 and are copied over on first store. Strings are immutable, so pointers are shared freely. |
-| 3 | List/tuple/dict/set/object arena. Lists and tuples: `[len:i16][type:u8, value:i32] * len`. Dicts (and sets, and object attribute tables): chained blocks of 4 entries (`[count:i16][next:i16][ktype:u8, kval:i32, vtype:u8, vval:i32] * 4`) so a dict's head address never changes — Python aliasing (`e = d; e[1] = 2` visible through `d`) falls out of that for free. |
+| 3 | List/tuple/dict/set/object arena. Lists and tuples: chained blocks of 4 entries (`[count:i16][next:i16][type:u8, value:i32] * 4`) so `.append()` grows lists in place without moving them. Dicts (and sets, and object attribute tables): chained blocks of 4 entries (`[count:i16][next:i16][ktype:u8, kval:i32, vtype:u8, vval:i32] * 4`) so a dict's head address never changes — Python aliasing (`e = d; e[1] = 2` visible through `d`) falls out of that for free. |
 
 Arenas only grow; nothing is freed until `MemoryError` wipes everything
 (variables, functions, all arenas) and reports `(state cleared)`.

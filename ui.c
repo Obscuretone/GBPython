@@ -103,7 +103,7 @@ void splash_screen(void) BANKED {
     gotoxy(0, 1);
     printf("    GBPython VM     ");
     gotoxy(0, 2);
-    printf("      v4.1.0        ");
+    printf("      v4.2.0        ");
 
     /* Load Python logo bitmap tiles into VRAM background slot 128 */
     set_bkg_data(128, 16, python_logo_tiles);
