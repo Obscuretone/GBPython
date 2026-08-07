@@ -40,11 +40,17 @@ persist across runs, like a real REPL.
   `break` / `continue` / `pass`, `for x in range(...) | list | tuple |
   string | dict | set`
 - **Functions**: `def` with `return`, recursion (`RecursionError` at depth
-  16), arity checking, and Python lexical scoping — assignment creates a
-  local, reads see the current frame and globals only. Definitions persist
-  across runs, like a real REPL.
-- **Classes**: `class Name:` with methods, `__init__`, `self`, attribute
-  get/set (`obj.attr`, `obj.attr = v`), `AttributeError`, `<Name>` repr
+  16), arity checking, the `global` keyword, and Python lexical scoping —
+  assignment creates a local, reads see the current frame and globals
+  only. Definitions persist across runs, like a real REPL.
+- **Classes**: `class Name:` and single inheritance `class Sub(Base):`
+  with methods, `__init__`, `self`, attribute get/set (`obj.attr`,
+  `obj.attr = v`), `AttributeError`, `<Name>` repr
+- **Exception handling**: `try:` / `except:` / `except NameError:` with
+  multiple clauses, and `raise ValueError('message')`
+- **Methods**: `'x'.upper()` `.lower()` `.strip()` `.find()` `.split()`
+  `.replace()`, dict `.get(k, default)` `.keys()` `.values()`,
+  list/tuple `.index()` `.count()`
 - **Assignment**: plain, augmented (`+= -= *= /= //= %=`), multiple
   (`a, b = 1, 2`), swap (`a, b = b, a`), sequence unpacking
   (`a, b = pair`)
@@ -69,8 +75,9 @@ persist across runs, like a real REPL.
 **Remaining deviations from CPython**: ints are 32-bit and wrap (no
 bignums), floats render with 4 decimal places, dict keys can't be floats,
 functions/methods take at most 4 parameters, `round()` rounds half away
-from zero, and there is no inheritance, `global`, f-strings, generators,
-or exceptions-as-values (`try`/`except`).
+from zero, exceptions match by name rather than by class hierarchy, and
+there is no multiple inheritance, `super()`, `finally`, f-strings,
+generators, or `list.append` (lists are fixed-size; use `a += [x]`).
 
 ## Controls
 

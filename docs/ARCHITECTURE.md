@@ -4,10 +4,10 @@
 
 The DMG Game Boy gives us a 4 MHz LR35902, 8 KB of work RAM (WRAM), 8 KB of
 video RAM, and whatever the cartridge brings. GBPython ships as an
-MBC5 + RAM + battery cart: 64 KB of ROM in four 16 KB banks and 32 KB of
+MBC5 + RAM + battery cart: 128 KB of ROM in 16 KB banks and 32 KB of
 cartridge SRAM in four 8 KB banks, switchable at 0xA000-0xBFFF.
 
-## ROM layout (64 KB, 4 banks)
+## ROM layout
 
 | File | Bank | Contents |
 |---|---|---|
@@ -20,6 +20,7 @@ cartridge SRAM in four 8 KB banks, switchable at 0xA000-0xBFFF.
 | `float32.c` | 3 (banked) | Soft-float: IEEE-754 single precision in 32-bit integer math (GBDK has no float library for the sm83) |
 | `builtins.c` | 3 (banked) | The builtin function dispatcher |
 | `ui.c` | 3 (banked) | Splash screen, input editor rendering, `input()` line editor |
+| `methods.c` | 4 (banked) | Methods on built-in types (`.upper()`, `.get()`, `.index()`, ...) |
 
 Bank 0 is always mapped, so anything in it is callable from anywhere —
 the hot allocators and accessors live there and cost nothing to call.
