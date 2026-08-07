@@ -25,6 +25,21 @@ uint8_t cursor_col = 0;
 char input_buffer[INPUT_MAX + 1] = "";
 uint8_t input_len = 0;
 
+/* Return-arrow glyph for the newline key, loaded into font tile slot 96
+   (the spectrum font uses 0-95; the boot-time inversion loop copies 0-127
+   to 128-255, so the highlighted version at slot 224 comes for free). */
+#define TILE_RETURN_ARROW 96
+static const unsigned char return_arrow_tile[16] = {
+    0x00, 0x00,
+    0x06, 0x06,
+    0x06, 0x06,
+    0x26, 0x26,
+    0x7E, 0x7E,
+    0x7E, 0x7E,
+    0x20, 0x20,
+    0x00, 0x00
+};
+
 void draw_osk(void) {
     uint8_t r, c;
     for (r = 0; r < OSK_ROWS; r++) {
@@ -32,7 +47,14 @@ void draw_osk(void) {
         for (c = 0; c < OSK_COLS; c++) {
             char display_char = osk_grid[r][c];
             if (display_char == '\n') {
-                display_char = 'E'; /* E for Enter/Newline */
+                /* newline key shows a custom return-arrow tile */
+                uint8_t t = TILE_RETURN_ARROW;
+                if (r == cursor_row && c == cursor_col) {
+                    t += 128; /* inverted copy */
+                }
+                set_bkg_tiles(OSK_X + c, OSK_Y + r, 1, 1, &t);
+                gotoxy(OSK_X + c + 1, OSK_Y + r);
+                continue;
             }
 
             if (r == cursor_row && c == cursor_col) {
@@ -206,7 +228,7 @@ void splash_screen(void) {
    own little event loop on the OSK; the entry line is drawn over the last
    output-window row (the "? " line input() just printed). Same controls as
    the main editor: A types, B deletes, Select+A shifts, tap-Select spaces,
-   Start or the E key submits. */
+   Start or the return-arrow key submits. */
 void ui_input_line(char* dst, uint8_t maxlen) {
     uint8_t keys;
     uint8_t last_keys;
@@ -243,7 +265,7 @@ void ui_input_line(char* dst, uint8_t maxlen) {
 
         if (pressed & J_A) {
             ch = osk_grid[cursor_row][cursor_col];
-            if (ch == '\n') break; /* E submits, like Enter */
+            if (ch == '\n') break; /* return arrow submits */
             if (keys & J_SELECT) {
                 if (ch >= 'a' && ch <= 'z') ch = ch - 'a' + 'A';
                 used_shift = 1;
@@ -299,6 +321,10 @@ void main(void) {
     /* Initialize Custom Font (Retro ZX Spectrum style) */
     font_init();
     font_set(font_load(font_spect));
+
+    /* Custom return-arrow glyph in the unused slot after the font, so the
+       inversion loop below covers it too */
+    set_bkg_data(TILE_RETURN_ARROW, 1, return_arrow_tile);
 
     /* Launch Animated Splash Screen bootstage */
     splash_screen();

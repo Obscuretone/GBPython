@@ -21,10 +21,6 @@ def fib(n):
 Press Start. Then just call `fib(10)` in your next program — definitions
 persist across runs, like a real REPL.
 
-The obligatory first program, typed one d-pad press at a time:
-
-![hello world on GBPython](docs/hello-world.png)
-
 ## Language
 
 - **Types**: 16-bit signed ints, strings, lists (heterogeneous, nestable),
@@ -78,7 +74,7 @@ The output pane shows the last 5 lines printed. Programs are limited to a
 | Button | Action |
 |---|---|
 | D-pad | Move keyboard cursor (wraps at row ends) |
-| A | Type character (`E` = newline) |
+| A | Type character (↵ = newline) |
 | Select + A | Shift: type uppercase letter |
 | B | Backspace |
 | Select (tap) | Space |
