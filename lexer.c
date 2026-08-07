@@ -293,6 +293,13 @@ void next_token(void) {
         return;
     }
 
+    if (*src_ptr == 'f' && (src_ptr[1] == '\'' || src_ptr[1] == '"')) {
+        /* f-string: hand the parser the raw text (src_ptr at the quote) */
+        curr_tok.type = TOK_FSTRING;
+        src_ptr++;
+        return;
+    }
+
     if (isalpha(*src_ptr) || *src_ptr == '_') {
         curr_tok.type = TOK_IDENTIFIER;
         i = 0;

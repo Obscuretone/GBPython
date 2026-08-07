@@ -268,6 +268,32 @@ CASES: list[tuple[str, str, list[str]]] = [
     ("index ValueError", "[1].index(9)", ["ValueError: index"]),
     ("method AttributeError", "'abc'.nope()", ["AttributeError: nope"]),
     ("chained methods", "sw='a b c'\nww=sw.split()\nlen(ww);ww[2].upper()", ["> 3", "> 'C'"]),
+    # mutable lists
+    ("append loop", "la=[]\nfor i in range(4): la.append(i*i)\nla", ["> [0, 1, 4, 9]"]),
+    ("append aliasing", "lb=[1,2]\nlc=lb\nlc.append(3)\nlb", ["> [1, 2, 3]"]),
+    ("pop", "ld=[7,8,9]\nld.pop();ld.pop(0);ld", ["> 9", "> 7", "> [8]"]),
+    ("pop empty", "[].pop()", ["IndexError: pop"]),
+    ("tuple no append", "(1,2).append(3)", ["AttributeError: appe"]),
+    # sorted and join
+    ("sorted", "sorted([3,1,2]);sorted(['b','a'])", ["> [1, 2, 3]", "> ['a', 'b']"]),
+    ("sorted mixed nums", "sorted([2.5,1,2])", ["> [1, 2, 2.5]"]),
+    ("join", "'-'.join(['a','b']);','.join('x y'.split())", ["> 'a-b'", "> 'x,y'"]),
+    # super()
+    ("super init", "class SA:\n    def __init__(s,x):\n        s.x=x\n    def get(s):\n        return s.x\nclass SB(SA):\n    def __init__(s,x):\n        super().__init__(x*2)\nSB(5).get()", ["> 10"]),
+    ("super method", "class SC(SA):\n    def get(s):\n        return super().get()+1\nSC(7).get()", ["> 8"]),
+    ("super outside", "super().foo()", ["RuntimeError: super"]),
+    ("override intact", "SA(3).get()", ["> 3"]),
+    # finally
+    ("finally normal", "try:\n    print(1)\nfinally:\n    print(2)", ["1", "2"]),
+    ("finally after catch", "try:\n    1/0\nexcept ZeroDivisionError:\n    print('c')\nfinally:\n    print('f')", ["c", "f"]),
+    ("finally propagates", "try:\n    zz\nfinally:\n    print('f')", ["f", "NameError: zz"]),
+    ("finally with return", "def gfin():\n    try:\n        return 1\n    finally:\n        print('fin')\ngfin()", ["fin", "> 1"]),
+    # f-strings
+    ("fstring expr", "f'x={1+2}!'", ["> 'x=3!'"]),
+    ("fstring types", "f'{3.5} and {True}'", ["> '3.5 and True'"]),
+    ("fstring method", "nm='gb'\nprint(f'hello {nm.upper()}')", ["hello GB"]),
+    ("fstring multi", "q=3\nf'{q} squared is {q*q}'", ["> '3 squared is 9'"]),
+    ("fstring empty", "f''", ["> ''"]),
     # comments
     ("comment line", "# nothing\n5 # five", ["> 5"]),
     # output window scrolls, keeps last 5

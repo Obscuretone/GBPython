@@ -43,6 +43,105 @@ ASTNode* parse_primary(void) {
         next_token();
         return n;
     }
+    if (curr_tok.type == TOK_FSTRING) {
+        /* f'a{expr}b' desugars to 'a' + str(expr) + 'b'. The lexer left
+           src_ptr at the opening quote; we consume the raw text here.
+           Embedded expressions are re-lexed from a WRAM buffer with the
+           outer lexer state saved (f-strings don't nest). */
+        static char fexpr[64];
+        char quote = *src_ptr;
+        char lit[NAME_MAX + 1];
+        uint8_t li = 0;
+        ASTNode* out = NULL;
+        src_ptr++;
+        for (;;) {
+            char ch = *src_ptr;
+            if (ch == quote || ch == '\0' || li >= NAME_MAX ||
+                ch == '{') {
+                if (li > 0) {
+                    ASTNode* seg = make_node(AST_STRING);
+                    if (seg != NULL) {
+                        lit[li] = '\0';
+                        strcpy(seg->identifier, lit);
+                    }
+                    li = 0;
+                    if (out == NULL) {
+                        out = seg;
+                    } else {
+                        ASTNode* add = make_node(AST_ADD);
+                        if (add != NULL) {
+                            add->left = out;
+                            add->right = seg;
+                        }
+                        out = add;
+                    }
+                }
+                if (ch != '{') {
+                    if (ch != quote && ch != '\0') continue; /* was cap flush */
+                    break;
+                }
+            }
+            if (ch == '{') {
+                uint8_t fi = 0;
+                const char* saved_src;
+                Token saved_tok;
+                uint8_t saved_sp, saved_pend, saved_line;
+                ASTNode* expr;
+                ASTNode* call;
+                ASTNode* arg;
+                src_ptr++;
+                while (*src_ptr && *src_ptr != '}' && fi < 63) {
+                    fexpr[fi++] = *src_ptr++;
+                }
+                fexpr[fi] = '\0';
+                if (*src_ptr == '}') src_ptr++;
+                /* sub-parse the expression from WRAM */
+                saved_src = src_ptr;
+                saved_tok = curr_tok;
+                saved_sp = indent_sp;
+                saved_pend = pending_dedents;
+                saved_line = at_line_start;
+                src_ptr = fexpr;
+                pending_dedents = 0;
+                at_line_start = 0;
+                next_token();
+                expr = parse_expression();
+                src_ptr = saved_src;
+                curr_tok = saved_tok;
+                indent_sp = saved_sp;
+                pending_dedents = saved_pend;
+                at_line_start = saved_line;
+                /* wrap in str(...) */
+                call = make_node(AST_CALL);
+                arg = make_node(AST_ARG);
+                if (call != NULL && arg != NULL) {
+                    strcpy(call->identifier, "str");
+                    call->left = arg;
+                    arg->left = expr;
+                }
+                if (out == NULL) {
+                    out = call;
+                } else {
+                    ASTNode* add = make_node(AST_ADD);
+                    if (add != NULL) {
+                        add->left = out;
+                        add->right = call;
+                    }
+                    out = add;
+                }
+                continue;
+            }
+            lit[li++] = ch;
+            src_ptr++;
+        }
+        if (*src_ptr == quote) src_ptr++;
+        next_token();
+        if (out == NULL) {
+            out = make_node(AST_STRING);
+            if (out != NULL) out->identifier[0] = '\0';
+        }
+        return out;
+    }
     if (curr_tok.type == TOK_IDENTIFIER) {
         ASTNode* n;
         if (strcmp(curr_tok.text, "super") == 0) {

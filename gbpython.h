@@ -45,6 +45,7 @@ typedef enum {
     TOK_IDENTIFIER,
     TOK_NUMBER,
     TOK_STRING,
+    TOK_FSTRING, /* src_ptr left at the opening quote for the parser */
     TOK_EQUAL,
     TOK_PLUS,
     TOK_MINUS,
@@ -110,6 +111,9 @@ typedef struct {
 
 extern const char* src_ptr;
 extern Token curr_tok;
+extern uint8_t indent_sp;
+extern uint8_t pending_dedents;
+extern uint8_t at_line_start;
 void lexer_reset(const char* src);
 void next_token(void);
 
