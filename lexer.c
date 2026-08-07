@@ -45,6 +45,7 @@ static TokenType keyword_type(const char* text) {
     if (strcmp(text, "pass") == 0) return TOK_PASS;
     if (strcmp(text, "class") == 0) return TOK_CLASS;
     if (strcmp(text, "import") == 0) return TOK_IMPORT;
+    if (strcmp(text, "global") == 0) return TOK_GLOBAL;
     return TOK_IDENTIFIER;
 }
 

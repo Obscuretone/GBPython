@@ -77,11 +77,11 @@ or exceptions-as-values (`try`/`except`).
 | Button | Action |
 |---|---|
 | D-pad | Move keyboard cursor (wraps at row ends) |
-| A | Type character (↵ = newline) |
+| A | Type character (▶ key = run the program) |
 | Select + A | Shift: type uppercase letter |
 | B | Backspace |
 | Select (tap) | Space |
-| Start | Run program (or submit, inside `input()`) |
+| Start | Newline (or submit, inside `input()`) |
 
 ## Building
 

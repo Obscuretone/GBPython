@@ -773,6 +773,31 @@ ASTNode* parse_statement(void) {
         return n;
     }
 
+    if (curr_tok.type == TOK_GLOBAL) {
+        ASTNode* n = make_node(AST_GLOBAL);
+        ASTNode* tail = NULL;
+        next_token();
+        while (curr_tok.type == TOK_IDENTIFIER) {
+            ASTNode* p = make_node(AST_PARAM);
+            if (p != NULL) {
+                strcpy(p->identifier, curr_tok.text);
+            }
+            if (tail == NULL) {
+                if (n != NULL) n->left = p;
+            } else {
+                tail->right = p;
+            }
+            tail = p;
+            next_token();
+            if (curr_tok.type == TOK_COMMA) {
+                next_token();
+            } else {
+                break;
+            }
+        }
+        return n;
+    }
+
     if (curr_tok.type == TOK_IMPORT) {
         ASTNode* n = make_node(AST_IMPORT);
         next_token();

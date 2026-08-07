@@ -153,7 +153,7 @@ void splash_screen(void) BANKED {
    own little event loop on the OSK; the entry line is drawn over the last
    output-window row (the "? " line input() just printed). Same controls as
    the main editor: A types, B deletes, Select+A shifts, tap-Select spaces,
-   Start or the return-arrow key submits. */
+   Start or the RUN key submits. */
 void ui_input_line(char* dst, uint8_t maxlen) BANKED {
     uint8_t keys;
     uint8_t last_keys;

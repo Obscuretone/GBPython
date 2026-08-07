@@ -20,18 +20,18 @@ uint8_t cursor_col = 0;
 char input_buffer[INPUT_MAX + 1] = "";
 uint8_t input_len = 0;
 
-/* Return-arrow glyph for the newline key, loaded into font tile slot 96
+/* Play-triangle glyph for the RUN key, loaded into font tile slot 96
    (the spectrum font uses 0-95; the boot-time inversion loop copies 0-127
    to 128-255, so the highlighted version at slot 224 comes for free). */
-#define TILE_RETURN_ARROW 96
-static const unsigned char return_arrow_tile[16] = {
+#define TILE_RUN 96
+static const unsigned char run_tile[16] = {
     0x00, 0x00,
-    0x06, 0x06,
-    0x06, 0x06,
-    0x26, 0x26,
-    0x7E, 0x7E,
-    0x7E, 0x7E,
-    0x20, 0x20,
+    0x40, 0x40,
+    0x70, 0x70,
+    0x7C, 0x7C,
+    0x7C, 0x7C,
+    0x70, 0x70,
+    0x40, 0x40,
     0x00, 0x00
 };
 
@@ -42,8 +42,8 @@ void draw_osk(void) {
         for (c = 0; c < OSK_COLS; c++) {
             char display_char = osk_grid[r][c];
             if (display_char == '\n') {
-                /* newline key shows a custom return-arrow tile */
-                uint8_t t = TILE_RETURN_ARROW;
+                /* the RUN key shows a play-triangle tile */
+                uint8_t t = TILE_RUN;
                 if (r == cursor_row && c == cursor_col) {
                     t += 128; /* inverted copy */
                 }
@@ -94,9 +94,9 @@ void main(void) {
     font_init();
     font_set(font_load(font_spect));
 
-    /* Custom return-arrow glyph in the unused slot after the font, so the
+    /* Custom RUN glyph in the unused slot after the font, so the
        inversion loop below covers it too */
-    set_bkg_data(TILE_RETURN_ARROW, 1, return_arrow_tile);
+    set_bkg_data(TILE_RUN, 1, run_tile);
 
     /* Launch Animated Splash Screen bootstage */
     splash_screen();
@@ -148,17 +148,22 @@ void main(void) {
 
         if (pressed & J_A) {
             selected_char = osk_grid[cursor_row][cursor_col];
-            /* SELECT held while typing acts as shift: uppercase letters */
-            if (keys & J_SELECT) {
-                if (selected_char >= 'a' && selected_char <= 'z') {
-                    selected_char = selected_char - 'a' + 'A';
+            if (selected_char == '\n') {
+                /* the RUN key executes the program */
+                run_interpreter();
+            } else {
+                /* SELECT held while typing acts as shift: uppercase */
+                if (keys & J_SELECT) {
+                    if (selected_char >= 'a' && selected_char <= 'z') {
+                        selected_char = selected_char - 'a' + 'A';
+                    }
+                    select_used_as_shift = 1;
                 }
-                select_used_as_shift = 1;
-            }
-            if (input_len < INPUT_MAX) {
-                input_buffer[input_len++] = selected_char;
-                input_buffer[input_len] = '\0';
-                draw_input_buffer();
+                if (input_len < INPUT_MAX) {
+                    input_buffer[input_len++] = selected_char;
+                    input_buffer[input_len] = '\0';
+                    draw_input_buffer();
+                }
             }
         }
 
@@ -184,7 +189,13 @@ void main(void) {
         }
 
         if (pressed & J_START) {
-            run_interpreter();
+            /* START types a newline: multi-line programs without leaving
+               the keyboard */
+            if (input_len < INPUT_MAX) {
+                input_buffer[input_len++] = '\n';
+                input_buffer[input_len] = '\0';
+                draw_input_buffer();
+            }
         }
 
         last_keys = keys;

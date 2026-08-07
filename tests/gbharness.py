@@ -5,9 +5,10 @@ joypad, and reads the background tilemap back as text.
 
 Two ways to enter a program:
   * repl(source)      -- fast path: writes the source directly into the ROM's
-                         input_buffer (address from gbpython.noi), presses START.
+                         input_buffer (address from gbpython.noi), presses the
+                         on-screen RUN key.
   * type_source(text) -- real path: navigates the on-screen keyboard with the
-                         d-pad and presses A per character.
+                         d-pad and presses A per character (START = newline).
 """
 
 from __future__ import annotations
@@ -127,10 +128,15 @@ class GBPython:
             if waited > max_frames:
                 raise TimeoutError("interpreter still running")
 
+    def press_run(self) -> None:
+        """Navigate to the RUN key (the '\\n' grid slot) and press A."""
+        self.move_cursor("\n")
+        self.press("a_button", hold=3, release=3)
+
     def repl(self, source: str) -> list[str]:
         """Run source through the interpreter, return output-area lines."""
         self.inject(source)
-        self.press("start", hold=3, release=3)
+        self.press_run()
         self.wait_run_done()
         self.frames(5)
         out_rows = self.screen()[OUT_TOP : OUT_TOP + OUT_ROWS]
@@ -168,6 +174,11 @@ class GBPython:
 
     def type_char(self, ch: str) -> None:
         buf_len = self.mem.storage[self.syms["_input_len"]]
+        if ch == "\n":
+            # START types a newline
+            while self.mem.storage[self.syms["_input_len"]] == buf_len:
+                self.press("start", hold=3, release=3)
+            return
         if ch == " ":
             # space is emitted on select release
             while self.mem.storage[self.syms["_input_len"]] == buf_len:
@@ -219,7 +230,7 @@ class GBPython:
         pygame.image.save(surf, path)
 
     def run_typed(self) -> list[str]:
-        self.press("start", hold=3, release=3)
+        self.press_run()
         self.wait_run_done()
         self.frames(5)
         return [r.rstrip() for r in self.screen()[OUT_TOP : OUT_TOP + OUT_ROWS]]

@@ -298,7 +298,7 @@ def run() -> int:
     # input(): the program blocks mid-run, we type on the OSK, Start submits.
     t0 = time.time()
     gb.inject("n=input('n?')\nprint(int(n)*2)")
-    gb.press("start", hold=3, release=3)
+    gb.press_run()
     gb.frames(30)
     gb.move_cursor("4")
     gb.press("a_button", hold=3, release=3)

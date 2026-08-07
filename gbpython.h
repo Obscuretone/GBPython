@@ -76,6 +76,7 @@ typedef enum {
     TOK_PASS,
     TOK_CLASS,
     TOK_IMPORT,
+    TOK_GLOBAL,
     TOK_LBRACKET,
     TOK_RBRACKET,
     TOK_LBRACE,
@@ -156,6 +157,7 @@ typedef enum {
     AST_SETATTR,/* left = AST_ATTR target, right = value */
     AST_METHOD, /* left = base expr, identifier = method, right = arg chain */
     AST_IMPORT, /* identifier = module name */
+    AST_GLOBAL, /* left = AST_PARAM name chain */
     AST_SEQ
 } ASTNodeType;
 

@@ -23,24 +23,36 @@ EnvNode* env = NULL;
    other call frames' locals (python lexical scoping). */
 EnvNode* frame_base = NULL;
 EnvNode* globals_head = NULL; /* env head when the outermost call began */
+EnvNode* env_tail = NULL;     /* oldest node: where new globals append */
+
+/* vtype sentinel: a frame-local alias created by 'global x' */
+#define TYPE_GMARK 0xF0
+
+EnvNode* find_global(const char* id) {
+    EnvNode* current = globals_head;
+    while (current) {
+        if (strcmp(current->identifier, id) == 0) {
+            return current;
+        }
+        current = current->next;
+    }
+    return NULL;
+}
 
 EnvNode* get_variable_node(const char* id) {
     EnvNode* current = env;
     EnvNode* stop = frame_base;
     while (current != stop) {
         if (strcmp(current->identifier, id) == 0) {
+            if (current->vtype == TYPE_GMARK) {
+                return find_global(id); /* 'global x' alias */
+            }
             return current;
         }
         current = current->next;
     }
     if (frame_base != NULL) {
-        current = globals_head;
-        while (current) {
-            if (strcmp(current->identifier, id) == 0) {
-                return current;
-            }
-            current = current->next;
-        }
+        return find_global(id);
     }
     return NULL;
 }
@@ -52,6 +64,26 @@ void set_variable(const char* id, long val, uint8_t vtype, uint8_t str_bank) {
     }
     while (current != frame_base) {
         if (strcmp(current->identifier, id) == 0) {
+            if (current->vtype == TYPE_GMARK) {
+                /* 'global x': write through to the globals region */
+                EnvNode* g = find_global(id);
+                if (g == NULL) {
+                    g = (EnvNode*)malloc(sizeof(EnvNode));
+                    if (g == NULL) return;
+                    strcpy(g->identifier, id);
+                    g->next = NULL;
+                    if (env_tail != NULL) {
+                        env_tail->next = g;
+                    } else {
+                        env = g;
+                        globals_head = g;
+                    }
+                    env_tail = g;
+                }
+                g->value = val;
+                g->vtype = vtype;
+                return;
+            }
             current->value = val;
             current->vtype = vtype;
             return;
@@ -65,6 +97,9 @@ void set_variable(const char* id, long val, uint8_t vtype, uint8_t str_bank) {
         current->vtype = vtype;
         current->next = env;
         env = current;
+        if (env_tail == NULL) {
+            env_tail = current;
+        }
     }
 }
 
@@ -588,6 +623,25 @@ long evaluate(ASTNode* n) {
                 current_class = c;
                 if (n->right) evaluate(n->right);
                 current_class = NULL;
+            }
+            last_eval_type = TYPE_NONE;
+            return 0;
+        }
+        case AST_GLOBAL: {
+            /* only meaningful inside a function */
+            if (frame_base != NULL) {
+                ASTNode* p = n->left;
+                while (p) {
+                    EnvNode* m = (EnvNode*)malloc(sizeof(EnvNode));
+                    if (m != NULL) {
+                        strcpy(m->identifier, p->identifier);
+                        m->value = 0;
+                        m->vtype = TYPE_GMARK;
+                        m->next = env;
+                        env = m;
+                    }
+                    p = p->right;
+                }
             }
             last_eval_type = TYPE_NONE;
             return 0;
@@ -1274,6 +1328,9 @@ static long invoke_function(ASTNode* def, const char* name, long* argv,
         env = env->next;
         free(t);
     }
+    if (env == NULL) {
+        env_tail = NULL;
+    }
     frame_base = saved_frame;
     call_depth--;
     return result;
@@ -1391,6 +1448,7 @@ void exec_statement(ASTNode* n) {
         case AST_CLASS:
         case AST_IMPORT:
         case AST_SETATTR:
+        case AST_GLOBAL:
             evaluate(n);
             if (exec_signal != SIG_ERROR) {
                 exec_signal = SIG_NONE; /* stray signals stop at top level */
@@ -1416,6 +1474,7 @@ void full_reset(void) {
         env = env->next;
         free(t);
     }
+    env_tail = NULL;
     funcs_clear();
     classes_clear();
     current_class = NULL;
