@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out GBPython
+        uses: actions/checkout@v4
+        with:
+          path: gbpython
+
+      - name: Check out PyGameBoy (test emulator)
+        uses: actions/checkout@v4
+        with:
+          repository: Obscuretone/pygameboy
+          path: pygameboy
+
+      - name: Cache GBDK-2020
+        id: cache-gbdk
+        uses: actions/cache@v4
+        with:
+          path: gbdk
+          key: gbdk-2020-4.3.0-linux64
+
+      - name: Install GBDK-2020
+        if: steps.cache-gbdk.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o gbdk.tar.gz \
+            https://github.com/gbdk-2020/gbdk-2020/releases/download/4.3.0/gbdk-linux64.tar.gz
+          tar -xzf gbdk.tar.gz
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install emulator dependencies
+        run: pip install numpy pygame
+
+      - name: Build ROM
+        working-directory: gbpython
+        run: make GBDK_HOME="$GITHUB_WORKSPACE/gbdk"
+
+      - name: Run the test suite
+        working-directory: gbpython
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: make test GBDK_HOME="$GITHUB_WORKSPACE/gbdk" PYTHON=python3
+
+      - name: Upload ROM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbpython.gb
+          path: gbpython/gbpython.gb
