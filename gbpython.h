@@ -147,6 +147,8 @@ typedef enum {
     AST_DICT,   /* left = AST_ARG chain, alternating key, value, key, ... */
     AST_MULTI,  /* left = AST_PARAM target chain, right = AST_ARG value chain */
     AST_CHAIN,  /* left = first operand; right = ARG links (number = op*2+negate) */
+    AST_TUPLE,  /* left = AST_ARG element chain */
+    AST_SET,    /* left = AST_ARG element chain */
     AST_SEQ
 } ASTNodeType;
 
@@ -171,6 +173,8 @@ ASTNode* parse_program(void) BANKED;
 #define TYPE_NONE 4
 #define TYPE_DICT 5
 #define TYPE_FLOAT 6
+#define TYPE_TUPLE 7  /* list storage, immutable */
+#define TYPE_SET 9    /* dict storage, values are None */
 
 /* Control-flow signals */
 #define SIG_NONE 0
@@ -243,6 +247,8 @@ void out_redraw(void) BANKED;
 void out_putline(const char* s) BANKED;
 extern char line_buf[24];
 void render_list(int ptr, char* buf) BANKED;
+void render_seq_inner(int ptr, char* buf, uint8_t* pos, uint8_t tuple) BANKED;
+void render_dict_inner(int d, char* buf, uint8_t* pos, uint8_t is_set) BANKED;
 void emit_value(long val, uint8_t vtype, uint8_t str_bank, uint8_t echo) BANKED;
 uint8_t truthy(long val, uint8_t vtype, uint8_t str_bank);
 

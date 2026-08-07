@@ -145,10 +145,12 @@ uint8_t eval_binop(ASTNode* n, long* lp, long* rp) {
         fetch_str(sbuf_l, *lp, lbank);
         return OPS_STR;
     }
-    if (binop_ltype == TYPE_LIST && binop_rtype == TYPE_LIST) {
+    if ((binop_ltype == TYPE_LIST && binop_rtype == TYPE_LIST) ||
+        (binop_ltype == TYPE_TUPLE && binop_rtype == TYPE_TUPLE)) {
         return OPS_LIST;
     }
-    if (binop_ltype == TYPE_DICT && binop_rtype == TYPE_DICT) {
+    if ((binop_ltype == TYPE_DICT && binop_rtype == TYPE_DICT) ||
+        (binop_ltype == TYPE_SET && binop_rtype == TYPE_SET)) {
         return OPS_DICT;
     }
     if (IS_NUM_T(binop_ltype) && IS_NUM_T(binop_rtype)) {
@@ -196,6 +198,7 @@ uint8_t compare_op(ASTNodeType op, uint8_t lt, long l, uint8_t lb,
     return l >= r;
 }
 
+static long eval_list_like(ASTNode* n);
 static long eval_call(ASTNode* n);
 static long eval_forin(ASTNode* n);
 static long eval_slice(ASTNode* n);
@@ -260,8 +263,13 @@ long evaluate(ASTNode* n) {
                         list_set(dst, ll + i, v, t);
                     }
                 }
-                last_eval_type = TYPE_LIST;
+                last_eval_type = binop_ltype; /* list+list or tuple+tuple */
                 return dst;
+            }
+            if (ops == OPS_DICT) {
+                last_eval_type = TYPE_INT;
+                raise_error("TypeError: +");
+                return 0;
             }
             if (ops == OPS_MIXED) {
                 last_eval_type = TYPE_INT;
@@ -528,33 +536,33 @@ long evaluate(ASTNode* n) {
         case AST_MULTI:
             return eval_multi(n);
         
-        case AST_LIST: {
-            int dst;
-            int count = 0;
-            int i = 0;
-            long v;
-            uint8_t t;
-            ASTNode* a = n->left;
-            while (a) {
-                count++;
-                a = a->right;
-            }
-            dst = list_new(count);
-            a = n->left;
-            while (a && dst) {
-                v = evaluate(a->left);
-                t = last_eval_type;
-                if (exec_signal == SIG_ERROR) return 0;
-                if (t == TYPE_STR) {
-                    v = store_str_value(v, last_eval_str_bank);
-                }
-                list_set(dst, i, v, t);
-                i++;
-                a = a->right;
-            }
-            last_eval_type = TYPE_LIST;
-            return dst;
+        case AST_TUPLE: {
+            long v2 = eval_list_like(n);
+            last_eval_type = TYPE_TUPLE;
+            return v2;
         }
+        case AST_SET: {
+            int d = dict_new();
+            ASTNode* a = n->left;
+            while (a && d) {
+                long kv = evaluate(a->left);
+                uint8_t kt = last_eval_type;
+                if (kt == TYPE_STR) {
+                    kv = store_str_value(kv, last_eval_str_bank);
+                } else if (kt != TYPE_INT && kt != TYPE_BOOL) {
+                    raise_error("TypeError: set elem");
+                    return 0;
+                }
+                if (exec_signal == SIG_ERROR) return 0;
+                dict_set(d, kt, kv, TYPE_NONE, 0);
+                a = a->right;
+            }
+            last_eval_type = TYPE_SET;
+            return d;
+        }
+        case AST_LIST:
+            return eval_list_like(n);
+        
         case AST_STORE:
             return eval_store(n);
         
@@ -689,8 +697,8 @@ static long eval_forin(ASTNode* n) {
             int len, i;
             uint8_t et;
             long ev;
-            if (stype == TYPE_DICT) {
-                /* python: iterating a dict yields its keys */
+            if (stype == TYPE_DICT || stype == TYPE_SET) {
+                /* python: iterating a dict/set yields its keys/elements */
                 len = dict_len(seq_val);
                 for (i = 0; i < len; i++) {
                     uint8_t kt, vt2;
@@ -711,7 +719,7 @@ static long eval_forin(ASTNode* n) {
                 last_eval_type = TYPE_NONE;
                 return 0;
             }
-            if (stype == TYPE_LIST) {
+            if (stype == TYPE_LIST || stype == TYPE_TUPLE) {
                 len = list_len(seq_val);
                 for (i = 0; i < len; i++) {
                     ev = list_get(seq_val, i, &et);
@@ -774,7 +782,7 @@ static long eval_slice(ASTNode* n) {
             if (btype == TYPE_STR) {
                 fetch_str(sbuf_l, base, bbank);
                 len = strlen(sbuf_l);
-            } else if (btype == TYPE_LIST) {
+            } else if (btype == TYPE_LIST || btype == TYPE_TUPLE) {
                 len = list_len(base);
             } else {
                 raise_error("TypeError: slice");
@@ -814,7 +822,7 @@ static long eval_slice(ASTNode* n) {
                         list_set(dst, i2, ev, et);
                     }
                 }
-                last_eval_type = TYPE_LIST;
+                last_eval_type = btype; /* slicing a tuple gives a tuple */
                 return dst;
             }
         }
@@ -838,9 +846,9 @@ static long eval_chain(ASTNode* n) {
                 if (exec_signal == SIG_ERROR) return 0;
                 if (op == AST_IN) {
                     /* membership inside a chain */
-                    if (rt == TYPE_LIST) {
+                    if (rt == TYPE_LIST || rt == TYPE_TUPLE) {
                         res = list_contains((int)rv, prev, pt, pb);
-                    } else if (rt == TYPE_DICT) {
+                    } else if (rt == TYPE_DICT || rt == TYPE_SET) {
                         res = dict_find((int)rv, pt, prev, pb) >= 0;
                     } else {
                         raise_error("TypeError: in");
@@ -909,6 +917,25 @@ static long eval_multi(ASTNode* n) {
             while (t) {
                 nt++;
                 t = t->right;
+            }
+            if (nv == 1 && nt > 1 &&
+                (vts[0] == TYPE_LIST || vts[0] == TYPE_TUPLE)) {
+                /* a, b = pair — unpack a sequence value */
+                int sl = list_len(vals[0]);
+                long sv = vals[0];
+                uint8_t et;
+                if (sl != nt) {
+                    raise_error("ValueError: unpack");
+                    return 0;
+                }
+                t = n->left;
+                for (i = 0; i < nt; i++) {
+                    long ev = list_get((int)sv, i, &et);
+                    set_variable(t->identifier, ev, et, 2);
+                    t = t->right;
+                }
+                last_eval_type = TYPE_NONE;
+                return 0;
             }
             if (nt != nv) {
                 raise_error("ValueError: unpack");
@@ -1023,7 +1050,7 @@ static long eval_index(ASTNode* n) {
                 last_eval_str_bank = 2;
                 return dst != NULL ? (long)(uint16_t)dst : 0;
             }
-            if (btype == TYPE_LIST) {
+            if (btype == TYPE_LIST || btype == TYPE_TUPLE) {
                 uint8_t et;
                 long ev;
                 len = list_len(base);
@@ -1051,10 +1078,10 @@ static long eval_in(ASTNode* n) {
             rt = last_eval_type;
             if (exec_signal == SIG_ERROR) return 0;
             last_eval_type = TYPE_BOOL;
-            if (rt == TYPE_LIST) {
+            if (rt == TYPE_LIST || rt == TYPE_TUPLE) {
                 return list_contains(r, l, lt, lb);
             }
-            if (rt == TYPE_DICT) {
+            if (rt == TYPE_DICT || rt == TYPE_SET) {
                 /* python: 'k' in d tests keys */
                 return dict_find((int)r, lt, l, lb) >= 0;
             }
@@ -1078,6 +1105,34 @@ static long eval_in(ASTNode* n) {
             }
             raise_error("TypeError: in");
             return 0;
+        }
+
+static long eval_list_like(ASTNode* n) {
+            int dst;
+            int count = 0;
+            int i = 0;
+            long v;
+            uint8_t t;
+            ASTNode* a = n->left;
+            while (a) {
+                count++;
+                a = a->right;
+            }
+            dst = list_new(count);
+            a = n->left;
+            while (a && dst) {
+                v = evaluate(a->left);
+                t = last_eval_type;
+                if (exec_signal == SIG_ERROR) return 0;
+                if (t == TYPE_STR) {
+                    v = store_str_value(v, last_eval_str_bank);
+                }
+                list_set(dst, i, v, t);
+                i++;
+                a = a->right;
+            }
+            last_eval_type = TYPE_LIST;
+            return dst;
         }
 
 /* Top-level execution: python REPL semantics. Expression statements echo

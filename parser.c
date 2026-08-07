@@ -81,7 +81,40 @@ ASTNode* parse_primary(void) {
     if (curr_tok.type == TOK_LPAREN) {
         ASTNode* expr;
         next_token(); /* skip '(' */
+        if (curr_tok.type == TOK_RPAREN) {
+            next_token();
+            return make_node(AST_TUPLE); /* () empty tuple */
+        }
         expr = parse_expression();
+        if (curr_tok.type == TOK_COMMA) {
+            /* tuple literal (a, b, ...) — possibly with trailing comma */
+            ASTNode* n = make_node(AST_TUPLE);
+            ASTNode* first = make_node(AST_ARG);
+            ASTNode* tail = first;
+            if (first != NULL) {
+                first->left = expr;
+            }
+            if (n != NULL) n->left = first;
+            next_token();
+            while (curr_tok.type != TOK_RPAREN && curr_tok.type != TOK_EOF &&
+                   curr_tok.type != TOK_NEWLINE) {
+                ASTNode* a = make_node(AST_ARG);
+                if (a != NULL) {
+                    a->left = parse_expression();
+                }
+                if (tail != NULL) tail->right = a;
+                tail = a;
+                if (curr_tok.type == TOK_COMMA) {
+                    next_token();
+                } else {
+                    break;
+                }
+            }
+            if (curr_tok.type == TOK_RPAREN) {
+                next_token();
+            }
+            return n;
+        }
         if (curr_tok.type == TOK_RPAREN) {
             next_token(); /* skip ')' */
         }
@@ -123,9 +156,29 @@ ASTNode* parse_primary(void) {
         while (curr_tok.type != TOK_RBRACE && curr_tok.type != TOK_EOF &&
                curr_tok.type != TOK_NEWLINE) {
             ASTNode* k = make_node(AST_ARG);
-            ASTNode* v = make_node(AST_ARG);
+            ASTNode* v;
             if (k != NULL) {
                 k->left = parse_expression();
+            }
+            if (curr_tok.type != TOK_COLON && n != NULL && n->left == NULL) {
+                /* {1, 2, 3} is a set: elements without values */
+                n->type = AST_SET;
+            }
+            if (n != NULL && n->type == AST_SET) {
+                if (n->left == NULL) {
+                    n->left = k;
+                } else {
+                    tail->right = k;
+                }
+                tail = k;
+                if (curr_tok.type == TOK_COMMA) {
+                    next_token();
+                    continue;
+                }
+                break;
+            }
+            v = make_node(AST_ARG);
+            if (k != NULL) {
                 k->right = v;
             }
             if (curr_tok.type == TOK_COLON) {

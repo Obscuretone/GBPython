@@ -21,9 +21,9 @@ uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
         if (argc && arg_type[0] == TYPE_STR) {
             fetch_str(sbuf_l, argv[0], arg_bank[0]);
             *result = strlen(sbuf_l);
-        } else if (argc && arg_type[0] == TYPE_LIST) {
+        } else if (argc && (arg_type[0] == TYPE_LIST || arg_type[0] == TYPE_TUPLE)) {
             *result = list_len(argv[0]);
-        } else if (argc && arg_type[0] == TYPE_DICT) {
+        } else if (argc && (arg_type[0] == TYPE_DICT || arg_type[0] == TYPE_SET)) {
             *result = dict_len(argv[0]);
         } else {
             raise_error("TypeError: len");
@@ -58,8 +58,15 @@ uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
             strcpy(tmp, argv[0] ? "True" : "False");
         } else if (arg_type[0] == TYPE_NONE) {
             strcpy(tmp, "None");
-        } else if (arg_type[0] == TYPE_LIST) {
-            render_list(argv[0], tmp);
+        } else if (arg_type[0] == TYPE_LIST || arg_type[0] == TYPE_TUPLE ||
+                   arg_type[0] == TYPE_DICT || arg_type[0] == TYPE_SET) {
+            uint8_t rp = 0;
+            if (arg_type[0] == TYPE_LIST || arg_type[0] == TYPE_TUPLE) {
+                render_seq_inner(argv[0], tmp, &rp, arg_type[0] == TYPE_TUPLE);
+            } else {
+                render_dict_inner(argv[0], tmp, &rp, arg_type[0] == TYPE_SET);
+            }
+            tmp[rp] = '\0';
         } else if (arg_type[0] == TYPE_FLOAT) {
             render_float(argv[0], tmp);
         } else {
@@ -230,10 +237,10 @@ uint8_t call_builtin(const char* name, long* argv, uint8_t* arg_type,
         long ev;
         int j, count;
         last_eval_type = TYPE_INT;
-        count = (argc == 1 && arg_type[0] == TYPE_LIST)
+        count = (argc == 1 && (arg_type[0] == TYPE_LIST || arg_type[0] == TYPE_TUPLE))
                     ? list_len(argv[0]) : argc;
         for (j = 0; j < count; j++) {
-            if (argc == 1 && arg_type[0] == TYPE_LIST) {
+            if (argc == 1 && (arg_type[0] == TYPE_LIST || arg_type[0] == TYPE_TUPLE)) {
                 ev = list_get(argv[0], j, &et);
             } else {
                 ev = argv[j];

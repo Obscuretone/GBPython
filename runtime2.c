@@ -79,6 +79,8 @@ uint8_t list_eq(int a, int b) BANKED {
             if (strcmp(x, y) != 0) return 0;
         } else if (ta == TYPE_LIST && tb == TYPE_LIST) {
             if (!list_eq(va, vb)) return 0;
+        } else if (ta == TYPE_TUPLE && tb == TYPE_TUPLE) {
+            if (!list_eq(va, vb)) return 0;
         } else if (ta == TYPE_NONE && tb == TYPE_NONE) {
             /* equal */
         } else {
@@ -98,7 +100,9 @@ uint8_t val_eq(uint8_t ta, long va, uint8_t tb, long vb) BANKED {
         return strcmp(x, y) == 0;
     }
     if (ta == TYPE_LIST && tb == TYPE_LIST) return list_eq(va, vb);
+    if (ta == TYPE_TUPLE && tb == TYPE_TUPLE) return list_eq(va, vb);
     if (ta == TYPE_DICT && tb == TYPE_DICT) return dict_eq(va, vb);
+    if (ta == TYPE_SET && tb == TYPE_SET) return dict_eq(va, vb);
     if (ta == TYPE_NONE && tb == TYPE_NONE) return 1;
     return 0;
 }
@@ -134,7 +138,8 @@ uint8_t list_contains(int ptr, long lv, uint8_t lt, uint8_t lbank) BANKED {
             fetch_str(x, lv, lbank);
             fetch_str(y, ev, 2);
             if (strcmp(x, y) == 0) return 1;
-        } else if (lt == TYPE_LIST && et == TYPE_LIST) {
+        } else if ((lt == TYPE_LIST && et == TYPE_LIST) ||
+                   (lt == TYPE_TUPLE && et == TYPE_TUPLE)) {
             if (list_eq(lv, ev)) return 1;
         }
     }
@@ -193,10 +198,10 @@ char line_buf[24];
 
 void render_val(uint8_t t, long v, char* buf, uint8_t* pos);
 
-void render_list_inner(int ptr, char* buf, uint8_t* pos) {
+void render_seq_inner(int ptr, char* buf, uint8_t* pos, uint8_t tuple) BANKED {
     int len = list_len(ptr);
     int i;
-    buf[(*pos)++] = '[';
+    buf[(*pos)++] = tuple ? '(' : '[';
     for (i = 0; i < len; i++) {
         uint8_t t;
         long v = list_get(ptr, i, &t);
@@ -211,10 +216,17 @@ void render_list_inner(int ptr, char* buf, uint8_t* pos) {
         }
         render_val(t, v, buf, pos);
     }
-    buf[(*pos)++] = ']';
+    if (tuple && len == 1) {
+        buf[(*pos)++] = ','; /* (1,) */
+    }
+    buf[(*pos)++] = tuple ? ')' : ']';
 }
 
-void render_dict_inner(int d, char* buf, uint8_t* pos) {
+void render_list_inner(int ptr, char* buf, uint8_t* pos) {
+    render_seq_inner(ptr, buf, pos, 0);
+}
+
+void render_dict_inner(int d, char* buf, uint8_t* pos, uint8_t is_set) BANKED {
     int len = dict_len(d);
     int i;
     buf[(*pos)++] = '{';
@@ -232,9 +244,11 @@ void render_dict_inner(int d, char* buf, uint8_t* pos) {
             buf[(*pos)++] = ' ';
         }
         render_val(kt, kv, buf, pos);
-        buf[(*pos)++] = ':';
-        buf[(*pos)++] = ' ';
-        render_val(vt, vv, buf, pos);
+        if (!is_set) {
+            buf[(*pos)++] = ':';
+            buf[(*pos)++] = ' ';
+            render_val(vt, vv, buf, pos);
+        }
     }
     buf[(*pos)++] = '}';
 }
@@ -242,14 +256,17 @@ void render_dict_inner(int d, char* buf, uint8_t* pos) {
 void render_val(uint8_t t, long v, char* buf, uint8_t* pos) {
     char tmp[20];
     uint8_t nl;
-    if (t == TYPE_LIST || t == TYPE_DICT) {
+    if (t == TYPE_LIST || t == TYPE_DICT || t == TYPE_TUPLE || t == TYPE_SET) {
         if (*pos > 14) {
             buf[(*pos)++] = '.';
             buf[(*pos)++] = '.';
             return;
         }
-        if (t == TYPE_LIST) render_list_inner(v, buf, pos);
-        else render_dict_inner(v, buf, pos);
+        if (t == TYPE_LIST || t == TYPE_TUPLE) {
+            render_seq_inner(v, buf, pos, t == TYPE_TUPLE);
+        } else {
+            render_dict_inner(v, buf, pos, t == TYPE_SET);
+        }
         return;
     }
     if (t == TYPE_STR) {
@@ -301,11 +318,15 @@ void emit_value(long val, uint8_t vtype, uint8_t str_bank, uint8_t echo) BANKED 
         } else {
             sprintf(line_buf, "%s", temp);
         }
-    } else if (vtype == TYPE_LIST || vtype == TYPE_DICT) {
+    } else if (vtype == TYPE_LIST || vtype == TYPE_DICT ||
+               vtype == TYPE_TUPLE || vtype == TYPE_SET) {
         char temp[24];
         uint8_t pos = 0;
-        if (vtype == TYPE_LIST) render_list_inner(val, temp, &pos);
-        else render_dict_inner(val, temp, &pos);
+        if (vtype == TYPE_LIST || vtype == TYPE_TUPLE) {
+            render_seq_inner(val, temp, &pos, vtype == TYPE_TUPLE);
+        } else {
+            render_dict_inner(val, temp, &pos, vtype == TYPE_SET);
+        }
         temp[pos] = '\0';
         if (echo) {
             sprintf(line_buf, "> %s", temp);

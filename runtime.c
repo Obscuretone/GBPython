@@ -335,8 +335,10 @@ uint8_t truthy(long val, uint8_t vtype, uint8_t str_bank) {
             SWITCH_RAM(1);
             return c != '\0';
         case TYPE_LIST:
+        case TYPE_TUPLE:
             return list_len((int)val) > 0;
         case TYPE_DICT:
+        case TYPE_SET:
             return dict_len((int)val) > 0;
         case TYPE_FLOAT:
             return !f32_is_zero(val);

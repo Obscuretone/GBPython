@@ -211,6 +211,21 @@ CASES: list[tuple[str, str, list[str]]] = [
     # comparison chains evaluate the middle operand once
     ("chain single eval", "def see(x):\n    print(x)\n    return x\n1<see(2)<3", ["2", "> True"]),
     ("long string", "u='0123456789'\nu=u+u+u+u+u+u\nlen(u)", ["> 60"]),
+    # tuples
+    ("tuple literal", "(1, 2, 3)", ["> (1, 2, 3)"]),
+    ("tuple single and empty", "(5,);()", ["> (5,)", "> ()"]),
+    ("tuple index", "t=(1,2);t[0];t[-1]", ["> 1", "> 2"]),
+    ("tuple immutable", "t=(1,2)\nt[0]=5", ["TypeError: item asgn"]),
+    ("tuple concat", "(1,2)+(3,)", ["> (1, 2, 3)"]),
+    ("tuple eq", "(1,2)==(1,2);(1,2)==[1,2]", ["> True", "> False"]),
+    ("tuple unpack", "a,b=(7,8);a;b", ["> 7", "> 8"]),
+    ("tuple slice", "(1,2)[1:]", ["> (2,)"]),
+    ("tuple iterate", "s=0\nfor x in (4,5,6): s+=x\ns", ["> 15"]),
+    # sets
+    ("set literal", "{1,2,3}", ["> {1, 2, 3}"]),
+    ("set membership", "2 in {1,2};9 in {1,2}", ["> True", "> False"]),
+    ("set len eq", "len({1,2,3});{1,2}=={1,2}", ["> 3", "> True"]),
+    ("set iterate", "for x in {7}: print(x)", ["7"]),
     # comments
     ("comment line", "# nothing\n5 # five", ["> 5"]),
     # output window scrolls, keeps last 5
